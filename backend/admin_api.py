@@ -9,6 +9,7 @@ from typing import List, Optional
 import httpx
 import os
 import jwt
+import uuid
 from datetime import datetime, timedelta, timezone
 from supabase import create_client, Client
 
@@ -81,6 +82,16 @@ class LoginRequest(BaseModel):
     password: str
     turnstileToken: str
 
+class TestCreate(BaseModel):
+    title: str
+    description: Optional[str] = ""
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    correct_marks: Optional[int] = 4
+    wrong_marks: Optional[int] = -1
+    skipped_marks: Optional[int] = 0
+    published: Optional[bool] = False
+
 
 @app.get("/")
 async def root():
@@ -135,14 +146,12 @@ async def get_dashboard_metrics(admin: AdminUser = Depends(get_current_admin)):
         raise HTTPException(status_code=500, detail="Database unconfigured")
         
     try:
-        # 1. Direct Count Queries from Supabase
         q_res = supabase.table("neet_questions").select("id", count="exact").execute()
         total_questions = q_res.count or 0
 
         u_res = supabase.table("profiles").select("id", count="exact").execute()
         total_users = u_res.count or 0
 
-        # 2. Dynamic Subject Breakdown from neet_questions
         subject_res = supabase.table("neet_questions").select("subject").execute()
         subject_map = {}
         if subject_res.data:
@@ -152,7 +161,6 @@ async def get_dashboard_metrics(admin: AdminUser = Depends(get_current_admin)):
         
         subject_stats = [{"subject": k, "count": v} for k, v in subject_map.items()]
 
-        # 3. Dynamic Year Breakdown from neet_questions
         year_res = supabase.table("neet_questions").select("year").execute()
         year_map = {}
         if year_res.data:
@@ -216,6 +224,78 @@ async def query_questions(
 
 router.add_api_route("/questions", query_questions, methods=["GET"])
 api_router.add_api_route("/questions", query_questions, methods=["GET"])
+
+
+# ==========================================
+# TESTS MANAGEMENT ENDPOINTS
+# ==========================================
+
+async def get_tests(admin: AdminUser = Depends(get_current_admin)):
+    tests_list = []
+    if supabase:
+        try:
+            res = supabase.table("tests").select("*").execute()
+            if res.data:
+                tests_list = res.data
+        except Exception:
+            pass
+    return {"tests": tests_list}
+
+async def create_test(payload: TestCreate, admin: AdminUser = Depends(get_current_admin)):
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unconfigured")
+    data_dict = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    data_dict["id"] = f"test_{uuid.uuid4().hex[:8]}"
+    
+    res = supabase.table("tests").insert(data_dict).execute()
+    return {"success": True, "test": res.data[0] if res.data else data_dict}
+
+async def update_test(test_id: str, payload: TestCreate, admin: AdminUser = Depends(get_current_admin)):
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unconfigured")
+    data_dict = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    
+    res = supabase.table("tests").update(data_dict).eq("id", test_id).execute()
+    return {"success": True, "test": res.data[0] if res.data else data_dict}
+
+async def delete_test(test_id: str, admin: AdminUser = Depends(get_current_admin)):
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unconfigured")
+    
+    supabase.table("tests").delete().eq("id", test_id).execute()
+    return {"success": True, "message": "Test purged successfully"}
+
+async def clone_test(test_id: str, admin: AdminUser = Depends(get_current_admin)):
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unconfigured")
+        
+    res = supabase.table("tests").select("*").eq("id", test_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Source test not found")
+        
+    source = res.data[0]
+    source["id"] = f"test_{uuid.uuid4().hex[:8]}"
+    source["title"] = f"{source.get('title', 'Mock Test')} (Clone)"
+    source["published"] = False
+    
+    cloned = supabase.table("tests").insert(source).execute()
+    return {"success": True, "test": cloned.data[0] if cloned.data else source}
+
+router.add_api_route("/tests", get_tests, methods=["GET"])
+api_router.add_api_route("/tests", get_tests, methods=["GET"])
+
+router.add_api_route("/tests", create_test, methods=["POST"])
+api_router.add_api_route("/tests", create_test, methods=["POST"])
+
+router.add_api_route("/tests/{test_id}", update_test, methods=["PUT"])
+api_router.add_api_route("/tests/{test_id}", update_test, methods=["PUT"])
+
+router.add_api_route("/tests/{test_id}", delete_test, methods=["DELETE"])
+api_router.add_api_route("/tests/{test_id}", delete_test, methods=["DELETE"])
+
+router.add_api_route("/tests/{test_id}/clone", clone_test, methods=["POST"])
+api_router.add_api_route("/tests/{test_id}/clone", clone_test, methods=["POST"])
+
 
 app.include_router(router)
 app.include_router(api_router)

@@ -65,9 +65,7 @@ export default function Tests() {
       for (const url of endpoints) {
         try {
           const res = await fetch(url, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
+            headers: { Authorization: `Bearer ${token}` }
           });
           if (res.status !== 404) {
             response = res;
@@ -79,7 +77,9 @@ export default function Tests() {
       }
 
       if (!response) {
-        throw new Error('Tests endpoint not found on backend server.');
+        setTests([]);
+        setLoading(false);
+        return;
       }
 
       if (response.status === 401 || response.status === 403) {
@@ -91,13 +91,13 @@ export default function Tests() {
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to query mock exams index.');
+        throw new Error(data.message || 'Failed to query test series.');
       }
 
       setTests(data.tests || data || []);
     } catch (err: any) {
       console.error('Failed to load tests:', err);
-      setError(err.message || 'System failed to query mock exam databases.');
+      setError(err.message || 'Failed to connect to test databases.');
     } finally {
       setLoading(false);
     }
@@ -112,7 +112,6 @@ export default function Tests() {
     setFormTitle('');
     setFormDesc('');
     
-    // Default schedule window (Next 30 days)
     const now = new Date();
     const future = new Date(Date.now() + 30 * 24 * 3600 * 1000);
     setFormStart(now.toISOString().substring(0, 16));
@@ -130,7 +129,6 @@ export default function Tests() {
     setFormTitle(test.title || '');
     setFormDesc(test.description || '');
     
-    // Formatting date string for input type="datetime-local"
     const startIso = test.start_time ? new Date(test.start_time).toISOString().substring(0, 16) : '';
     const endIso = test.end_time ? new Date(test.end_time).toISOString().substring(0, 16) : '';
     setFormStart(startIso);
@@ -167,26 +165,18 @@ export default function Tests() {
     };
 
     try {
-      let response;
-      if (editingTest) {
-        response = await fetch(`${API_BASE_URL}/api/admin/tests/${editingTest.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(payload),
-        });
-      } else {
-        response = await fetch(`${API_BASE_URL}/api/admin/tests`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(payload),
-        });
-      }
+      const url = editingTest
+        ? `${API_BASE_URL}/api/admin/tests/${editingTest.id}`
+        : `${API_BASE_URL}/api/admin/tests`;
+
+      const response = await fetch(url, {
+        method: editingTest ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
 
       if (!response.ok) {
         const resData = await response.json();
@@ -210,9 +200,7 @@ export default function Tests() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/admin/tests/${id}/clone`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (!response.ok) {
@@ -224,7 +212,7 @@ export default function Tests() {
       fetchTests();
     } catch (err: any) {
       console.error('Clone failed:', err);
-      setError('System failed during series duplication.');
+      setError('System error during series duplication.');
     }
   };
 
@@ -242,16 +230,14 @@ export default function Tests() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/admin/tests/${deletingId}`, {
         method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (!response.ok) {
         throw new Error('Failed to delete mock test.');
       }
 
-      setSuccess('Mock test series purged successfully from system catalogs.');
+      setSuccess('Mock test series purged successfully.');
       setTimeout(() => setSuccess(''), 3000);
       fetchTests();
     } catch (err: any) {
@@ -297,17 +283,17 @@ export default function Tests() {
         </div>
       )}
 
-      {/* Test List Grid */}
+      {/* Test Grid */}
       {loading ? (
         <div className="flex flex-col items-center justify-center p-12 gap-2 min-h-[300px]">
           <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
           <span className="text-xs text-neutral-400 font-semibold">Scanning mock databases...</span>
         </div>
       ) : tests.length === 0 ? (
-        <div className="text-center p-12 bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-800">
-          <Calendar className="h-10 w-10 text-neutral-300 dark:text-neutral-700 mx-auto mb-2" />
-          <h3 className="font-bold text-sm text-neutral-800 dark:text-neutral-200">No Mock Exams Indexed</h3>
-          <p className="text-xs text-neutral-400 mt-1 max-w-sm mx-auto">
+        <div className="text-center p-16 bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-xs">
+          <Calendar className="h-10 w-10 text-neutral-400 dark:text-neutral-600 mx-auto mb-3" />
+          <h3 className="font-bold text-base text-neutral-800 dark:text-neutral-200">No Mock Exams Indexed</h3>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 max-w-sm mx-auto">
             Get started by scheduling your first high-yield mock test series complete with standard negative marks schema.
           </p>
         </div>
@@ -340,7 +326,6 @@ export default function Tests() {
                 </p>
               </div>
 
-              {/* Marking Scheme and Date ranges */}
               <div className="p-3 bg-neutral-50 dark:bg-neutral-950 rounded-lg space-y-2 text-[11px] font-medium">
                 <div className="flex justify-between text-neutral-500">
                   <span>Marking Schema:</span>
@@ -356,7 +341,6 @@ export default function Tests() {
                 </div>
               </div>
 
-              {/* Action buttons */}
               <div className="pt-3 border-t border-neutral-100 dark:border-neutral-800 flex justify-between items-center text-xs">
                 <span className="text-neutral-400 font-semibold flex items-center gap-1 font-mono text-[10px]">
                   <FileText className="h-3.5 w-3.5" />
@@ -392,7 +376,7 @@ export default function Tests() {
         </div>
       )}
 
-      {/* CREATE & EDIT SCHEDULER FORM MODAL */}
+      {/* FORM MODAL */}
       {isFormOpen && (
         <div className="fixed inset-0 overflow-y-auto z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-neutral-950/60 backdrop-blur-xs" onClick={() => setIsFormOpen(false)} />
@@ -427,7 +411,7 @@ export default function Tests() {
                 <textarea
                   value={formDesc}
                   onChange={(e) => setFormDesc(e.target.value)}
-                  placeholder="Summarize exam details or syllabus requirements..."
+                  placeholder="Summarize exam details..."
                   rows={2}
                   className="w-full px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 font-medium"
                 />
@@ -456,7 +440,6 @@ export default function Tests() {
                 </div>
               </div>
 
-              {/* Marking scheme card */}
               <div className="border border-emerald-100 dark:border-emerald-950/40 rounded-xl p-4 bg-emerald-50/10 space-y-3.5">
                 <span className="font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
                   <Sparkles className="h-4.5 w-4.5" />
@@ -475,7 +458,7 @@ export default function Tests() {
                     />
                   </div>
                   <div>
-                    <label className="block font-semibold text-neutral-400 mb-1.5 uppercase">Incorrect (Negative)</label>
+                    <label className="block font-semibold text-neutral-400 mb-1.5 uppercase">Incorrect</label>
                     <input
                       type="number"
                       required
@@ -506,7 +489,7 @@ export default function Tests() {
                   className="rounded text-emerald-600 border-neutral-300"
                 />
                 <label htmlFor="published_checkbox" className="font-semibold text-neutral-700 dark:text-neutral-300 select-none cursor-pointer">
-                  Publish this test series immediately to student directories
+                  Publish this test series immediately
                 </label>
               </div>
 
@@ -536,7 +519,7 @@ export default function Tests() {
         onClose={() => setIsDeleteOpen(false)}
         onConfirm={confirmDelete}
         title="Purge Mock Exam Series"
-        message="Are you sure you want to permanently delete this exam series? All candidate score histories and ranking matrices indexed under this specific mock exam series will be lost."
+        message="Are you sure you want to permanently delete this exam series?"
         confirmText="Permanently Purge"
         cancelText="Cancel"
         isDanger={true}
