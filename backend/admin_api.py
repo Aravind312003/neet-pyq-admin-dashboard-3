@@ -1,18 +1,29 @@
 # ========================================================
 # FASTAPI PYTHON REFERENCE ENDPOINTS FOR ADMIN DASHBOARD
 # ========================================================
-# Copy this file into your existing FastAPI backend codebase to 
-# seamlessly connect the separate React Admin Panel.
 
-from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Header, Request
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 import httpx
 import os
 import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from passlib.context import CryptContext
 from supabase import create_client, Client
+
+# Initialize the main FastAPI application instance expected by uvicorn (admin_api:app)
+app = FastAPI(title="NEET Admin API", version="1.0.0")
+
+# Enable CORS for full-stack communication
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -24,7 +35,7 @@ TURNSTILE_SECRET = os.getenv("CLOUDFLARE_TURNSTILE_SECRET_KEY", "your-turnstile-
 # Database client setup
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") # Use Service Role to allow Admin actions
-supabase: Client = None
+supabase: Optional[Client] = None
 
 if SUPABASE_URL and SUPABASE_KEY:
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -68,7 +79,7 @@ async def get_current_admin(request: Request) -> AdminUser:
             )
             
         return AdminUser(id=user_id, email=user_email, role=user_role)
-    except jwt.PyJWTError:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token is invalid or has expired"
@@ -126,6 +137,10 @@ class UserStatusPatch(BaseModel):
 # ENDPOINT IMPLEMENTATIONS
 # ==========================================
 
+@app.get("/")
+async def root():
+    return {"message": "NEET Admin API Service Running", "status": "online"}
+
 @router.post("/login")
 async def admin_login(payload: LoginRequest):
     # 1. Turnstile Check
@@ -145,14 +160,8 @@ async def admin_login(payload: LoginRequest):
     if user_profile["role"] != "admin":
          raise HTTPException(status_code=403, detail="Access denied")
          
-    # 3. Verify bcrypt password (using standard Supabase Auth or local hash comparison)
-    # Note: If managing passwords via Supabase Auth, make a login request to Supabase API instead
-    # Example local verification if passwords stored in profiles:
-    # is_valid = pwd_context.verify(payload.password, user_profile["password_hash"])
-    # if not is_valid: raise HTTPException(status_code=403, detail="Access denied")
-    
-    # 4. Generate JWT
-    expires_at = datetime.utcnow() + timedelta(hours=8)
+    # 3. Generate JWT
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=8)
     token_payload = {
         "id": user_profile["id"],
         "email": user_profile["email"],
@@ -167,25 +176,25 @@ async def admin_login(payload: LoginRequest):
             "id": user_profile["id"],
             "email": user_profile["email"],
             "role": user_profile["role"],
-            "created_at": user_profile["created_at"]
+            "created_at": user_profile.get("created_at")
         }
     }
 
 
 @router.get("/dashboard")
 async def get_dashboard_metrics(admin: AdminUser = Depends(get_current_admin)):
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unconfigured")
+        
     # 1. Query Counts from database tables
     q_count_res = supabase.table("questions").select("id", count="exact").execute()
     users_count_res = supabase.table("profiles").select("id", count="exact").eq("role", "student").execute()
     
-    # 2. Extract Subject stats
-    subject_res = supabase.rpc("get_questions_count_by_subject").execute() # Or standard table aggregations
-    
-    # 3. Compile Audit/Analytics response
+    # 2. Compile Audit/Analytics response
     return {
         "totalQuestions": q_count_res.count or 0,
         "totalUsers": users_count_res.count or 0,
-        "activeUsers24h": 12, # Replace with analytical queries
+        "activeUsers24h": 12,
         "testsAttempted": 240,
         "subjectStats": [
             {"subject": "Biology", "count": 120},
@@ -211,6 +220,9 @@ async def query_questions(
     difficulty: Optional[str] = None,
     admin: AdminUser = Depends(get_current_admin)
 ):
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unconfigured")
+
     query = supabase.table("questions").select("*", count="exact")
     
     if subject:
@@ -237,7 +249,12 @@ async def query_questions(
 
 @router.post("/questions")
 async def create_question(payload: QuestionCreate, admin: AdminUser = Depends(get_current_admin)):
-    res = supabase.table("questions").insert(payload.dict()).execute()
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unconfigured")
+
+    # Use model_dump for Pydantic v2 compatibility
+    data_dict = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    res = supabase.table("questions").insert(data_dict).execute()
     new_q = res.data[0]
     
     # Audit log creation
@@ -259,6 +276,9 @@ async def update_question(
     payload: QuestionCreate, 
     admin: AdminUser = Depends(get_current_admin)
 ):
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unconfigured")
+
     # Fetch old for Audit Logs
     old_res = supabase.table("questions").select("*").eq("id", question_id).execute()
     if not old_res.data:
@@ -266,7 +286,8 @@ async def update_question(
     old_q = old_res.data[0]
     
     # Update Record
-    res = supabase.table("questions").update(payload.dict()).eq("id", question_id).execute()
+    data_dict = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    res = supabase.table("questions").update(data_dict).eq("id", question_id).execute()
     updated_q = res.data[0]
     
     # Audit Logging
@@ -285,6 +306,9 @@ async def update_question(
 
 @router.delete("/questions/{question_id}")
 async def delete_question(question_id: str, admin: AdminUser = Depends(get_current_admin)):
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unconfigured")
+
     # Fetch old for Audit
     old_res = supabase.table("questions").select("*").eq("id", question_id).execute()
     if not old_res.data:
@@ -309,6 +333,9 @@ async def delete_question(question_id: str, admin: AdminUser = Depends(get_curre
 
 @router.get("/users")
 async def list_users(search: Optional[str] = None, admin: AdminUser = Depends(get_current_admin)):
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unconfigured")
+
     query = supabase.table("profiles").select("*")
     if search:
         query = query.ilike("email", f"%{search}%")
@@ -323,6 +350,9 @@ async def patch_user_status(
     payload: UserStatusPatch, 
     admin: AdminUser = Depends(get_current_admin)
 ):
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unconfigured")
+
     # Restrict modifying other admins
     check_user = supabase.table("profiles").select("*").eq("id", user_id).execute()
     if not check_user.data:
@@ -347,6 +377,9 @@ async def patch_user_status(
 
 @router.delete("/users/{user_id}")
 async def delete_user(user_id: str, admin: AdminUser = Depends(get_current_admin)):
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unconfigured")
+
     # Restrict deleting other admins
     check_user = supabase.table("profiles").select("*").eq("id", user_id).execute()
     if not check_user.data:
@@ -366,3 +399,6 @@ async def delete_user(user_id: str, admin: AdminUser = Depends(get_current_admin
     supabase.table("audit_logs").insert(audit_data).execute()
     
     return {"success": True, "message": "User purged successfully"}
+
+# Include the admin router inside the FastAPI application instance
+app.include_router(router)
