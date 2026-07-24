@@ -11,12 +11,12 @@ import {
   Loader2,
   Clock,
   Sparkles,
-  Award,
-  HelpCircle,
-  X,
-  FileText
+  FileText,
+  X
 } from 'lucide-react';
 import Modal from '../components/Modal';
+
+const API_BASE_URL = 'https://neet-pyq-admin-dashboard-3.onrender.com';
 
 export default function Tests() {
   const navigate = useNavigate();
@@ -54,12 +54,33 @@ export default function Tests() {
       return;
     }
 
+    const endpoints = [
+      `${API_BASE_URL}/api/admin/tests`,
+      `${API_BASE_URL}/admin/tests`
+    ];
+
+    let response: Response | null = null;
+
     try {
-      const response = await fetch('/api/admin/tests', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      for (const url of endpoints) {
+        try {
+          const res = await fetch(url, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+          if (res.status !== 404) {
+            response = res;
+            break;
+          }
+        } catch (e) {
+          console.warn(`Attempt failed for ${url}:`, e);
+        }
+      }
+
+      if (!response) {
+        throw new Error('Tests endpoint not found on backend server.');
+      }
 
       if (response.status === 401 || response.status === 403) {
         localStorage.removeItem('adminToken');
@@ -73,7 +94,7 @@ export default function Tests() {
         throw new Error(data.message || 'Failed to query mock exams index.');
       }
 
-      setTests(data.tests || []);
+      setTests(data.tests || data || []);
     } catch (err: any) {
       console.error('Failed to load tests:', err);
       setError(err.message || 'System failed to query mock exam databases.');
@@ -148,7 +169,7 @@ export default function Tests() {
     try {
       let response;
       if (editingTest) {
-        response = await fetch(`/api/admin/tests/${editingTest.id}`, {
+        response = await fetch(`${API_BASE_URL}/api/admin/tests/${editingTest.id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -157,7 +178,7 @@ export default function Tests() {
           body: JSON.stringify(payload),
         });
       } else {
-        response = await fetch('/api/admin/tests', {
+        response = await fetch(`${API_BASE_URL}/api/admin/tests`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -187,7 +208,7 @@ export default function Tests() {
     if (!token) return;
 
     try {
-      const response = await fetch(`/api/admin/tests/${id}/clone`, {
+      const response = await fetch(`${API_BASE_URL}/api/admin/tests/${id}/clone`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -203,7 +224,7 @@ export default function Tests() {
       fetchTests();
     } catch (err: any) {
       console.error('Clone failed:', err);
-      setError('System collapsed during series duplication.');
+      setError('System failed during series duplication.');
     }
   };
 
@@ -219,7 +240,7 @@ export default function Tests() {
     setIsDeleteOpen(false);
 
     try {
-      const response = await fetch(`/api/admin/tests/${deletingId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/admin/tests/${deletingId}`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -302,7 +323,7 @@ export default function Tests() {
                   <span
                     className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
                       test.published
-                        ? 'bg-emerald-100 text-emerald-800'
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-400'
                         : 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400'
                     }`}
                   >
@@ -324,13 +345,13 @@ export default function Tests() {
                 <div className="flex justify-between text-neutral-500">
                   <span>Marking Schema:</span>
                   <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-                    +{test.correct_marks} / {test.wrong_marks} negative / {test.skipped_marks} skipped
+                    +{test.correct_marks ?? 4} / {test.wrong_marks ?? -1} negative / {test.skipped_marks ?? 0} skipped
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 text-neutral-400 font-mono text-[10px]">
                   <Clock className="h-3.5 w-3.5 shrink-0" />
                   <span className="truncate">
-                    {new Date(test.start_time).toLocaleDateString()} - {new Date(test.end_time).toLocaleDateString()}
+                    {test.start_time ? new Date(test.start_time).toLocaleDateString() : 'N/A'} - {test.end_time ? new Date(test.end_time).toLocaleDateString() : 'N/A'}
                   </span>
                 </div>
               </div>
