@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, Mail, Lock, AlertCircle, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import Turnstile from '../components/Turnstile';
 
+// Ensure no trailing slash on base URL
 const API_BASE_URL = 'https://neet-pyq-admin-dashboard-3.onrender.com';
 
 export default function Login() {
@@ -38,16 +39,48 @@ export default function Login() {
 
     setLoading(true);
 
+    // List of common backend route aliases to try sequentially in case of route mounting mismatch
+    const endpointsToTry = [
+      `${API_BASE_URL}/api/admin/login`,
+      `${API_BASE_URL}/admin/login`,
+      `${API_BASE_URL}/api/login`,
+    ];
+
+    let response: Response | null = null;
+    let successfulEndpoint = '';
+
     try {
-      const response = await fetch(`${API_BASE_URL}/api/admin/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, turnstileToken }),
-      });
+      for (const endpoint of endpointsToTry) {
+        try {
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password, turnstileToken }),
+          });
+
+          // If the endpoint is found (not 404), use this response
+          if (res.status !== 404) {
+            response = res;
+            successfulEndpoint = endpoint;
+            break;
+          }
+        } catch (fetchErr) {
+          console.warn(`Failed reaching ${endpoint}:`, fetchErr);
+        }
+      }
+
+      // If all attempts returned 404 or failed
+      if (!response) {
+        setError(
+          'Login endpoint not found (404). Please verify that your backend Express routes are correctly mounted under /api/admin/login.'
+        );
+        setLoading(false);
+        return;
+      }
 
       const contentType = response.headers.get('content-type') || '';
       if (contentType.includes('text/html') || response.redirected) {
-        setError('Authentication server error. Please verify CORS and backend settings.');
+        setError('Received HTML instead of JSON. Check backend CORS and route settings.');
         setLoading(false);
         return;
       }
@@ -56,7 +89,7 @@ export default function Login() {
       try {
         data = await response.json();
       } catch (jsonErr) {
-        setError('Received an unexpected response from server.');
+        setError('Received an invalid JSON response from the server.');
         setLoading(false);
         return;
       }
@@ -71,22 +104,24 @@ export default function Login() {
         return;
       }
 
+      // Login success
       setSuccess(true);
-      localStorage.setItem('adminToken', data.token);
-      localStorage.setItem('adminUser', JSON.stringify(data.user));
+      if (data.token) localStorage.setItem('adminToken', data.token);
+      if (data.user) localStorage.setItem('adminUser', JSON.stringify(data.user));
 
       setTimeout(() => {
         navigate('/admin/dashboard');
       }, 1000);
     } catch (err) {
       console.error('Login request failed:', err);
-      setError('Connection failed. Please verify that your backend server on Render is running.');
+      setError('Connection failed. Please check if your Render backend service is awake and active.');
       setLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen bg-neutral-900 flex items-center justify-center p-6 relative overflow-hidden">
+      {/* Background Decorative Rings */}
       <div className="absolute -top-40 -left-40 h-96 w-96 rounded-full bg-emerald-500/10 blur-3xl" />
       <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-teal-500/10 blur-3xl" />
 
@@ -170,6 +205,7 @@ export default function Login() {
               </div>
             </div>
 
+            {/* Turnstile Widget */}
             <Turnstile onVerify={(token) => setTurnstileToken(token)} />
 
             <button
