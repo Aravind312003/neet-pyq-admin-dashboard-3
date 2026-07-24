@@ -70,7 +70,7 @@ export default function Dashboard() {
       } catch (err) {
         console.error('Failed to load dashboard data:', err);
         setError('Failed to retrieve live administrative analytics.');
-      } font-semibold {
+      } finally {
         setLoading(false);
       }
     };
