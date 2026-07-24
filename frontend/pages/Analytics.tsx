@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, BookOpen, BarChart3, Loader2, AlertCircle, Activity, HelpCircle } from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
 import {
-  ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, Legend
+  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid
 } from 'recharts';
 import { DashboardAnalytics } from '../types';
 
@@ -22,10 +22,32 @@ export default function Analytics() {
         return;
       }
 
+      const endpoints = [
+        `${API_BASE_URL}/admin/dashboard`,
+        `${API_BASE_URL}/api/admin/dashboard`,
+        `${API_BASE_URL}/api/dashboard`
+      ];
+
+      let response: Response | null = null;
+
       try {
-        const response = await fetch(`${API_BASE_URL}/api/admin/dashboard`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        for (const url of endpoints) {
+          try {
+            const res = await fetch(url, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.status !== 404) {
+              response = res;
+              break;
+            }
+          } catch (e) {
+            console.warn(`Attempt failed for ${url}:`, e);
+          }
+        }
+
+        if (!response) {
+          throw new Error('Analytics endpoint not found (404).');
+        }
 
         if (response.status === 401 || response.status === 403) {
           localStorage.removeItem('adminToken');
@@ -36,7 +58,7 @@ export default function Analytics() {
 
         const stats = await response.json();
         setData(stats);
-      } catch (err) {
+      } catch (err: any) {
         console.error('Failed to load analytics:', err);
         setError('Connection issues prevent loading active analytics.');
       } finally {
@@ -66,7 +88,6 @@ export default function Analytics() {
     );
   }
 
-  const COLORS = ['#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6'];
   const registrationTimeline = data.userActivity?.timeline7 || [];
 
   return (

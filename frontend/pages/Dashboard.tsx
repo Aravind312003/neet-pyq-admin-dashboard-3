@@ -6,7 +6,6 @@ import {
   CheckCircle,
   AlertOctagon,
   TrendingUp,
-  ChevronRight,
   AlertCircle,
   Loader2,
   Activity,
@@ -22,10 +21,7 @@ import {
   CartesianGrid,
   PieChart,
   Pie,
-  Cell,
-  AreaChart,
-  Area,
-  Legend
+  Cell
 } from 'recharts';
 
 const API_BASE_URL = 'https://neet-pyq-admin-dashboard-3.onrender.com';
@@ -37,7 +33,6 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   
   const [activeTab, setActiveTab] = useState<'overview' | 'activity' | 'dropoff' | 'performance'>('overview');
-  const [timelineDays, setTimelineDays] = useState<7 | 30 | 90>(7);
 
   useEffect(() => {
     const fetchDashboard = async () => {
@@ -47,12 +42,33 @@ export default function Dashboard() {
         return;
       }
 
+      // Try backend route variants sequentially to bypass 404 router mounting differences
+      const endpoints = [
+        `${API_BASE_URL}/admin/dashboard`,
+        `${API_BASE_URL}/api/admin/dashboard`,
+        `${API_BASE_URL}/api/dashboard`
+      ];
+
+      let response: Response | null = null;
+
       try {
-        const response = await fetch(`${API_BASE_URL}/api/admin/dashboard`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        for (const url of endpoints) {
+          try {
+            const res = await fetch(url, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.status !== 404) {
+              response = res;
+              break;
+            }
+          } catch (e) {
+            console.warn(`Attempt failed for ${url}:`, e);
+          }
+        }
+
+        if (!response) {
+          throw new Error('Endpoint not found (404) on Render server.');
+        }
 
         if (response.status === 401 || response.status === 403) {
           localStorage.removeItem('adminToken');
@@ -62,14 +78,14 @@ export default function Dashboard() {
         }
 
         if (!response.ok) {
-          throw new Error('Server returned error details');
+          throw new Error('Server returned an error status.');
         }
 
         const analytics = await response.json();
         setData(analytics);
-      } catch (err) {
+      } catch (err: any) {
         console.error('Failed to load dashboard data:', err);
-        setError('Failed to retrieve live administrative analytics.');
+        setError(err.message || 'Failed to retrieve live administrative analytics.');
       } finally {
         setLoading(false);
       }
@@ -104,13 +120,6 @@ export default function Dashboard() {
   }
 
   const COLORS = ['#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6'];
-
-  const activeTimeline = 
-    timelineDays === 7 
-      ? data.userActivity?.timeline7 
-      : timelineDays === 30 
-        ? data.userActivity?.timeline30 
-        : data.userActivity?.timeline90;
 
   return (
     <div className="space-y-8 pb-12">
@@ -150,7 +159,7 @@ export default function Dashboard() {
             <div>
               <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider group-hover:text-emerald-500 transition-colors duration-200">Total Questions</p>
               <h3 className="text-2xl font-black text-neutral-900 dark:text-neutral-50 mt-1.5">
-                {data.totalQuestions}
+                {data.totalQuestions ?? 0}
               </h3>
             </div>
             <div className="h-10 w-10 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-white transition-all duration-300">
@@ -171,7 +180,7 @@ export default function Dashboard() {
             <div>
               <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider group-hover:text-teal-500 transition-colors duration-200">Registered Students</p>
               <h3 className="text-2xl font-black text-neutral-900 dark:text-neutral-50 mt-1.5">
-                {data.totalUsers}
+                {data.totalUsers ?? 0}
               </h3>
             </div>
             <div className="h-10 w-10 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center group-hover:bg-teal-500 group-hover:text-white transition-all duration-300">
@@ -192,7 +201,7 @@ export default function Dashboard() {
             <div>
               <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider group-hover:text-blue-500 transition-colors duration-200">Active Today (DAU)</p>
               <h3 className="text-2xl font-black text-neutral-900 dark:text-neutral-50 mt-1.5">
-                {data.activeUsers24h}
+                {data.activeUsers24h ?? 0}
               </h3>
             </div>
             <div className="h-10 w-10 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center group-hover:bg-blue-500 group-hover:text-white transition-all duration-300">
@@ -213,7 +222,7 @@ export default function Dashboard() {
             <div>
               <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider group-hover:text-indigo-500 transition-colors duration-200">Completed Sessions</p>
               <h3 className="text-2xl font-black text-neutral-900 dark:text-neutral-50 mt-1.5">
-                {data.testsAttempted}
+                {data.testsAttempted ?? 0}
               </h3>
             </div>
             <div className="h-10 w-10 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center group-hover:bg-indigo-500 group-hover:text-white transition-all duration-300">
@@ -239,7 +248,7 @@ export default function Dashboard() {
               </div>
               <div className="h-64 mt-4">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={data.subjectStats} barSize={40}>
+                  <BarChart data={data.subjectStats || []} barSize={40}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#525252" opacity={0.15} />
                     <XAxis dataKey="subject" stroke="#888888" fontSize={11} tickLine={false} />
                     <YAxis stroke="#888888" fontSize={11} tickLine={false} />
@@ -253,7 +262,7 @@ export default function Dashboard() {
                       }}
                     />
                     <Bar dataKey="count" fill="#10b981" radius={[4, 4, 0, 0]}>
-                      {data.subjectStats.map((entry: any, index: number) => (
+                      {(data.subjectStats || []).map((entry: any, index: number) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Bar>
@@ -273,7 +282,7 @@ export default function Dashboard() {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={data.yearStats}
+                      data={data.yearStats || []}
                       cx="50%"
                       cy="50%"
                       innerRadius={50}
@@ -282,7 +291,7 @@ export default function Dashboard() {
                       dataKey="count"
                       nameKey="year"
                     >
-                      {data.yearStats.map((entry: any, index: number) => (
+                      {(data.yearStats || []).map((entry: any, index: number) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
@@ -297,14 +306,6 @@ export default function Dashboard() {
                     />
                   </PieChart>
                 </ResponsiveContainer>
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-                {data.yearStats.map((stat: any, i: number) => (
-                  <div key={stat.year} className="flex items-center gap-1.5 text-neutral-500 truncate">
-                    <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }}></span>
-                    <span className="font-semibold text-neutral-800 dark:text-neutral-200">{stat.year}:</span> {stat.count}
-                  </div>
-                ))}
               </div>
             </div>
           </div>
