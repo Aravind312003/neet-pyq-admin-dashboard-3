@@ -1,15 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Search,
-  Plus,
-  Edit,
-  Trash2,
-  Loader2,
-  AlertCircle,
-  HelpCircle,
-  Flag
-} from 'lucide-react';
+import { Search, Loader2, AlertCircle, HelpCircle, Flag } from 'lucide-react';
 import { Question } from '../types';
 
 const API_BASE_URL = 'https://neet-pyq-admin-dashboard-3.onrender.com';
@@ -37,7 +28,6 @@ export default function Questions() {
       return;
     }
 
-    // Clean params so we don't send empty strings that trigger 422 errors
     const params = new URLSearchParams();
     params.append('page', String(page));
     params.append('limit', '10');
@@ -47,35 +37,10 @@ export default function Questions() {
     if (filterYear) params.append('year', filterYear);
     if (filterDifficulty) params.append('difficulty', filterDifficulty);
 
-    const queryString = params.toString();
-
-    // Route fallbacks
-    const endpoints = [
-      `${API_BASE_URL}/admin/questions?${queryString}`,
-      `${API_BASE_URL}/api/admin/questions?${queryString}`,
-      `${API_BASE_URL}/api/questions?${queryString}`
-    ];
-
-    let response: Response | null = null;
-
     try {
-      for (const url of endpoints) {
-        try {
-          const res = await fetch(url, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (res.status !== 404) {
-            response = res;
-            break;
-          }
-        } catch (e) {
-          console.warn(`Attempt failed for ${url}:`, e);
-        }
-      }
-
-      if (!response) {
-        throw new Error('Questions endpoint not found on server.');
-      }
+      const response = await fetch(`${API_BASE_URL}/api/admin/questions?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       if (response.status === 401 || response.status === 403) {
         localStorage.removeItem('adminToken');
@@ -87,7 +52,7 @@ export default function Questions() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || data.detail || `Server error (${response.status})`);
+        throw new Error(data.message || `Server Error (${response.status})`);
       }
 
       setQuestions(data.questions || data.data || (Array.isArray(data) ? data : []));
@@ -172,7 +137,7 @@ export default function Questions() {
                 <HelpCircle className="h-10 w-10 text-neutral-300 dark:text-neutral-700 mx-auto mb-2" />
                 <h3 className="font-bold text-sm text-neutral-800 dark:text-neutral-200">No Questions Found</h3>
                 <p className="text-xs text-neutral-400 mt-1 max-w-sm mx-auto">
-                  No matching questions found in your <code>neet_questions</code> database table.
+                  No matching questions found in your <code>neet_questions</code> table.
                 </p>
               </div>
             ) : (
