@@ -99,27 +99,8 @@ export default function Dashboard() {
 
   const COLORS = ['#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6', '#a855f7'];
 
-  // Default Subject dataset matching video bar chart (Physics, Chemistry, Biology, Botany, Zoology)
-  const defaultSubjectStats = [
-    { subject: 'Physics', count: 300 },
-    { subject: 'Chemistry', count: 300 },
-    { subject: 'Biology', count: 600 },
-    { subject: 'Botany', count: 300 },
-    { subject: 'Zoology', count: 300 }
-  ];
-
-  // Default Year dataset matching video legend (2020 through 2025)
-  const defaultYearStats = [
-    { year: 2020, count: 200 },
-    { year: 2021, count: 200 },
-    { year: 2022, count: 200 },
-    { year: 2023, count: 200 },
-    { year: 2024, count: 200 },
-    { year: 2025, count: 200 }
-  ];
-
-  const subjectStats = data.subjectStats && data.subjectStats.length >= 5 ? data.subjectStats : defaultSubjectStats;
-  const yearStats = data.yearStats && data.yearStats.length >= 6 ? data.yearStats : defaultYearStats;
+  const subjectStats = data.subjectStats || [];
+  const yearStats = data.yearStats || [];
   const mostIncorrect = data.mostIncorrectQuestions || [];
 
   return (
@@ -152,7 +133,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Metric Cards Grid */}
+      {/* Metric Cards Grid - Live Supabase Aggregations */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <Link 
           to="/admin/questions"
@@ -162,7 +143,7 @@ export default function Dashboard() {
             <div>
               <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider group-hover:text-emerald-500 transition-colors duration-200">Total Questions</p>
               <h3 className="text-2xl font-black text-neutral-900 dark:text-neutral-50 mt-1.5">
-                {data.totalQuestions || 1200}
+                {data.totalQuestions ?? 0}
               </h3>
             </div>
             <div className="h-10 w-10 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-white transition-all duration-300">
@@ -183,7 +164,7 @@ export default function Dashboard() {
             <div>
               <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider group-hover:text-teal-500 transition-colors duration-200">Registered Students</p>
               <h3 className="text-2xl font-black text-neutral-900 dark:text-neutral-50 mt-1.5">
-                {data.totalUsers || 1000}
+                {data.totalUsers ?? 0}
               </h3>
             </div>
             <div className="h-10 w-10 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center group-hover:bg-teal-500 group-hover:text-white transition-all duration-300">
@@ -204,7 +185,7 @@ export default function Dashboard() {
             <div>
               <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider group-hover:text-blue-500 transition-colors duration-200">Active Today (DAU)</p>
               <h3 className="text-2xl font-black text-neutral-900 dark:text-neutral-50 mt-1.5">
-                {data.activeUsers24h || 12}
+                {data.activeUsers24h ?? 0}
               </h3>
             </div>
             <div className="h-10 w-10 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center group-hover:bg-blue-500 group-hover:text-white transition-all duration-300">
@@ -225,7 +206,7 @@ export default function Dashboard() {
             <div>
               <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider group-hover:text-indigo-500 transition-colors duration-200">Completed Sessions</p>
               <h3 className="text-2xl font-black text-neutral-900 dark:text-neutral-50 mt-1.5">
-                {data.testsAttempted || 240}
+                {data.testsAttempted ?? 0}
               </h3>
             </div>
             <div className="h-10 w-10 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center group-hover:bg-indigo-500 group-hover:text-white transition-all duration-300">
@@ -242,7 +223,7 @@ export default function Dashboard() {
       {activeTab === 'overview' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Main Bar Chart: Questions per Subject */}
+            {/* Subject Bar Chart */}
             <div className="lg:col-span-2 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-5 shadow-xs">
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -255,7 +236,7 @@ export default function Dashboard() {
                   <BarChart data={subjectStats} barSize={40}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#525252" opacity={0.15} />
                     <XAxis dataKey="subject" stroke="#888888" fontSize={11} tickLine={false} />
-                    <YAxis stroke="#888888" fontSize={11} tickLine={false} domain={[0, 600]} />
+                    <YAxis stroke="#888888" fontSize={11} tickLine={false} />
                     <Tooltip
                       contentStyle={{
                         backgroundColor: '#171717',
@@ -275,7 +256,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Side Donut Chart with Video Legend: Questions per Year */}
+            {/* Year Donut Chart */}
             <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-5 shadow-xs flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -316,7 +297,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Exact Color Legend Grid matching video */}
               <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs border-t border-neutral-100 dark:border-neutral-800/80 pt-3">
                 {yearStats.map((stat: any, i: number) => (
                   <div key={stat.year} className="flex items-center gap-2 text-neutral-500 truncate">
@@ -328,7 +308,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Most Incorrectly Answered Questions Section matching video */}
+          {/* Most Incorrectly Answered Section */}
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-5 shadow-xs">
             <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-4 mb-4">
               <div>
