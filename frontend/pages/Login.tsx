@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, Mail, Lock, AlertCircle, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import Turnstile from '../components/Turnstile';
 
+const API_BASE_URL = 'https://neet-pyq-admin-dashboard-3.onrender.com';
+
 export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
@@ -14,7 +16,6 @@ export default function Login() {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    // If already logged in, redirect to dashboard
     const token = localStorage.getItem('adminToken');
     if (token) {
       navigate('/admin/dashboard');
@@ -38,16 +39,15 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const response = await fetch('/api/admin/login', {
+      const response = await fetch(`${API_BASE_URL}/api/admin/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, turnstileToken }),
       });
 
-      // Check if response is HTML (redirected by Google AI Studio preview auth flow / cookie check)
       const contentType = response.headers.get('content-type') || '';
       if (contentType.includes('text/html') || response.redirected) {
-        setError('Google AI Studio preview proxy requires authentication setup. Please click the "Open in new tab" icon (top right corner of preview pane) to bypass local iframe cookie block and sign in successfully.');
+        setError('Authentication server error. Please verify CORS and backend settings.');
         setLoading(false);
         return;
       }
@@ -56,7 +56,7 @@ export default function Login() {
       try {
         data = await response.json();
       } catch (jsonErr) {
-        setError('Received an unexpected response. Please open this application in a New Tab (top right icon) to log in.');
+        setError('Received an unexpected response from server.');
         setLoading(false);
         return;
       }
@@ -71,7 +71,6 @@ export default function Login() {
         return;
       }
 
-      // Login success
       setSuccess(true);
       localStorage.setItem('adminToken', data.token);
       localStorage.setItem('adminUser', JSON.stringify(data.user));
@@ -81,14 +80,13 @@ export default function Login() {
       }, 1000);
     } catch (err) {
       console.error('Login request failed:', err);
-      setError('Connection failed. Please verify that your dev server is active, or try opening this application in a New Tab (top right icon) to bypass preview sandbox restrictions.');
+      setError('Connection failed. Please verify that your backend server on Render is running.');
       setLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen bg-neutral-900 flex items-center justify-center p-6 relative overflow-hidden">
-      {/* Background Decorative Rings */}
       <div className="absolute -top-40 -left-40 h-96 w-96 rounded-full bg-emerald-500/10 blur-3xl" />
       <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-teal-500/10 blur-3xl" />
 
@@ -172,7 +170,6 @@ export default function Login() {
               </div>
             </div>
 
-            {/* Turnstile Widget */}
             <Turnstile onVerify={(token) => setTurnstileToken(token)} />
 
             <button

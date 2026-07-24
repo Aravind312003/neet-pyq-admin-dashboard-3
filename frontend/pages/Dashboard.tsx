@@ -6,19 +6,11 @@ import {
   CheckCircle,
   AlertOctagon,
   TrendingUp,
-  TrendingDown,
   ChevronRight,
-  BookOpen,
-  Calendar,
   AlertCircle,
   Loader2,
   Activity,
-  Award,
-  Flame,
-  Sparkles,
-  BarChart3,
-  Percent,
-  HelpCircle
+  Award
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -33,10 +25,10 @@ import {
   Cell,
   AreaChart,
   Area,
-  Legend,
-  LineChart,
-  Line
+  Legend
 } from 'recharts';
+
+const API_BASE_URL = 'https://neet-pyq-admin-dashboard-3.onrender.com';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -44,9 +36,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
-  // Tab control
   const [activeTab, setActiveTab] = useState<'overview' | 'activity' | 'dropoff' | 'performance'>('overview');
-  // Activity timeline days filter
   const [timelineDays, setTimelineDays] = useState<7 | 30 | 90>(7);
 
   useEffect(() => {
@@ -58,7 +48,7 @@ export default function Dashboard() {
       }
 
       try {
-        const response = await fetch('/api/admin/dashboard', {
+        const response = await fetch(`${API_BASE_URL}/api/admin/dashboard`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -115,7 +105,6 @@ export default function Dashboard() {
 
   const COLORS = ['#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6'];
 
-  // Select timeline array based on toggle filter
   const activeTimeline = 
     timelineDays === 7 
       ? data.userActivity?.timeline7 
@@ -125,7 +114,6 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8 pb-12">
-      {/* Upper Pitch */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-neutral-900 dark:text-neutral-50 font-sans">
@@ -136,7 +124,6 @@ export default function Dashboard() {
           </p>
         </div>
 
-        {/* Tab Switcher */}
         <div className="flex bg-neutral-100 dark:bg-neutral-900 p-1 rounded-xl border border-neutral-200 dark:border-neutral-800 self-start sm:self-center">
           {(['overview', 'activity', 'dropoff', 'performance'] as const).map((tab) => (
             <button
@@ -154,7 +141,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Metrics Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <Link 
           to="/admin/questions"
@@ -241,13 +227,9 @@ export default function Dashboard() {
         </Link>
       </div>
 
-      {/* CONDITIONAL RENDERING OF ADVANCED ANALYTIC SECTIONS */}
-
-      {/* TAB 1: OVERVIEW */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Main Chart: Subject Distribution */}
             <div className="lg:col-span-2 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-5 shadow-xs">
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -280,7 +262,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Side Chart: Year Breakdown */}
             <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-5 shadow-xs">
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -325,323 +306,6 @@ export default function Dashboard() {
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
-
-          {/* Critical Student Pain Point: Most Incorrectly Answered Questions */}
-          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-5 shadow-xs">
-            <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-4 mb-4">
-              <div>
-                <h3 className="font-bold text-sm text-neutral-900 dark:text-neutral-50">Most Incorrectly Answered Questions</h3>
-                <p className="text-[11px] text-neutral-400">Analyzing hardest concepts based on aggregated mock test submissions</p>
-              </div>
-              <Link
-                to="/admin/questions"
-                className="text-xs font-semibold text-emerald-600 hover:text-emerald-500 flex items-center gap-0.5"
-              >
-                Review Questions
-                <ChevronRight className="h-3.5 w-3.5" />
-              </Link>
-            </div>
-
-            <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
-              {data.mostIncorrectQuestions.length === 0 ? (
-                <div className="py-8 text-center text-xs text-neutral-400 dark:text-neutral-500">
-                  No incorrect questions recorded yet. Data will populate automatically as students submit their exam attempts.
-                </div>
-              ) : (
-                data.mostIncorrectQuestions.map((q: any, index: number) => (
-                  <div key={q.question_id} className="py-4.5 flex items-start justify-between gap-4 first:pt-0 last:pb-0">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-400">
-                          #{index + 1} Hardest
-                        </span>
-                        <span className="text-xs font-medium text-neutral-400 truncate">
-                          {q.subject} • Question ID: {q.question_id}
-                        </span>
-                      </div>
-                      <p className="text-xs text-neutral-700 dark:text-neutral-300 font-medium line-clamp-2 mt-1.5 leading-relaxed">
-                        {q.question_text}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <span className="text-sm font-black text-rose-600 dark:text-rose-400">{q.incorrect_count}</span>
-                      <p className="text-[10px] text-neutral-400 uppercase font-semibold">Wrong Attempts</p>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: USER ACTIVITY */}
-      {activeTab === 'activity' && (
-        <div className="space-y-6">
-          {/* Activity Cohort Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-neutral-900 dark:to-neutral-950 border border-emerald-100 dark:border-neutral-800 rounded-xl p-5 shadow-xs text-center">
-              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Daily Active Users (DAU)</span>
-              <h4 className="text-3xl font-black text-emerald-600 mt-2">{data.userActivity?.dau || 0}</h4>
-              <p className="text-xs text-neutral-500 mt-1">Unique student active sessions within past 24 hours</p>
-            </div>
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-neutral-900 dark:to-neutral-950 border border-blue-100 dark:border-neutral-800 rounded-xl p-5 shadow-xs text-center">
-              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Weekly Active Users (WAU)</span>
-              <h4 className="text-3xl font-black text-blue-600 mt-2">{data.userActivity?.wau || 0}</h4>
-              <p className="text-xs text-neutral-500 mt-1">Unique student active sessions within past 7 days</p>
-            </div>
-            <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-neutral-900 dark:to-neutral-950 border border-purple-100 dark:border-neutral-800 rounded-xl p-5 shadow-xs text-center">
-              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Monthly Active Users (MAU)</span>
-              <h4 className="text-3xl font-black text-purple-600 mt-2">{data.userActivity?.mau || 0}</h4>
-              <p className="text-xs text-neutral-500 mt-1">Unique student active sessions within past 30 days</p>
-            </div>
-          </div>
-
-          {/* Activity Trend Line / Area Chart */}
-          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-5 shadow-xs">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-neutral-100 dark:border-neutral-800 pb-4 mb-4">
-              <div>
-                <h3 className="font-bold text-sm text-neutral-900 dark:text-neutral-50">Active Users vs Registrations</h3>
-                <p className="text-[11px] text-neutral-400">Tracking database growth and active engagement rates over time</p>
-              </div>
-
-              {/* Time Range Selector */}
-              <div className="flex bg-neutral-100 dark:bg-neutral-950 p-1 rounded-lg border border-neutral-200 dark:border-neutral-800 self-start sm:self-center">
-                {([7, 30, 90] as const).map((days) => (
-                  <button
-                    key={days}
-                    onClick={() => setTimelineDays(days)}
-                    className={`px-3 py-1 rounded-md text-[10px] font-bold cursor-pointer ${
-                      timelineDays === days
-                        ? 'bg-white dark:bg-neutral-800 text-emerald-600 shadow-xs'
-                        : 'text-neutral-500 hover:text-neutral-800'
-                    }`}
-                  >
-                    Last {days} Days
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="h-72 mt-4">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={activeTimeline}>
-                  <defs>
-                    <linearGradient id="colorReg" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorAct" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/>
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#525252" opacity={0.15} />
-                  <XAxis dataKey="date" stroke="#888888" fontSize={11} tickLine={false} />
-                  <YAxis stroke="#888888" fontSize={11} tickLine={false} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#171717',
-                      border: '1px solid #262626',
-                      borderRadius: '8px',
-                      color: '#fff',
-                      fontSize: '12px',
-                    }}
-                  />
-                  <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: '11px' }} />
-                  <Area name="Cumulative Registrations" type="monotone" dataKey="registrations" stroke="#10b981" fillOpacity={1} fill="url(#colorReg)" strokeWidth={2.5} />
-                  <Area name="Active User Sessions" type="monotone" dataKey="activeUsers" stroke="#3b82f6" fillOpacity={1} fill="url(#colorAct)" strokeWidth={2.5} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: TEST DROP-OFF */}
-      {activeTab === 'dropoff' && (
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-5 shadow-xs">
-            <h3 className="font-bold text-sm text-neutral-900 dark:text-neutral-50 mb-1">User Exam Funnel & Completion</h3>
-            <p className="text-[11px] text-neutral-400 mb-6">Analyzing which question number cohorts student practice sessions terminate or drop off</p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {data.testDropOff?.map((test: any) => (
-                <div key={test.testId} className="border border-neutral-200 dark:border-neutral-800 rounded-xl p-4 space-y-4">
-                  <div>
-                    <h4 className="font-bold text-xs text-neutral-900 dark:text-neutral-50 truncate" title={test.title}>
-                      {test.title}
-                    </h4>
-                    <p className="text-[10px] text-neutral-400 mt-0.5">Attempt Sessions: {test.started}</p>
-                  </div>
-
-                  {/* Ring/Funnel Summary */}
-                  <div className="grid grid-cols-3 gap-2 text-center py-2 bg-neutral-50 dark:bg-neutral-950 rounded-lg">
-                    <div>
-                      <span className="text-[10px] text-neutral-400 uppercase">Completed</span>
-                      <p className="text-xs font-black text-emerald-600 mt-0.5">{test.completed}</p>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-neutral-400 uppercase">Rate</span>
-                      <p className="text-xs font-black text-blue-600 mt-0.5">{test.completionRate}%</p>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-neutral-400 uppercase">Avg Ans</span>
-                      <p className="text-xs font-black text-purple-600 mt-0.5">Q{test.avgQuestionsAnswered}</p>
-                    </div>
-                  </div>
-
-                  {/* Funnel chart for specific test */}
-                  <div>
-                    <span className="text-[10px] font-semibold text-neutral-400 block mb-2">Question Retention rates:</span>
-                    <div className="space-y-1.5">
-                      {[
-                        { label: 'Q1+ (Start)', rate: test.dropOffByQuestion.Q1 },
-                        { label: 'Q20+', rate: test.dropOffByQuestion.Q20 },
-                        { label: 'Q50+', rate: test.dropOffByQuestion.Q50 },
-                        { label: 'Q100+', rate: test.dropOffByQuestion.Q100 },
-                        { label: 'Q180 (Full)', rate: test.dropOffByQuestion.Q180 }
-                      ].map((cohort) => (
-                        <div key={cohort.label} className="text-[10px]">
-                          <div className="flex justify-between text-neutral-500 mb-0.5 font-medium">
-                            <span>{cohort.label}</span>
-                            <span className="font-semibold text-neutral-700 dark:text-neutral-300">{cohort.rate}%</span>
-                          </div>
-                          <div className="w-full bg-neutral-100 dark:bg-neutral-950 rounded-full h-1.5 overflow-hidden">
-                            <div
-                              className="bg-emerald-500 h-full rounded-full transition-all"
-                              style={{ width: `${cohort.rate}%` }}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 4: SUBJECT & TOPIC PERFORMANCE HEATMAP */}
-      {activeTab === 'performance' && (
-        <div className="space-y-6">
-          {/* Subject Performance Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {data.subjectPerformance?.map((sub: any) => (
-              <div key={sub.subject} className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-5 shadow-xs space-y-4">
-                <div className="flex justify-between items-center border-b border-neutral-100 dark:border-neutral-800 pb-3">
-                  <h4 className="font-bold text-xs text-neutral-900 dark:text-neutral-50 flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: sub.subject === 'Biology' ? '#10b981' : sub.subject === 'Physics' ? '#3b82f6' : '#f59e0b' }}></span>
-                    {sub.subject} Performance
-                  </h4>
-                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
-                    {sub.avgAccuracy}% Accuracy
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <span className="text-neutral-400 font-semibold block">Average Score</span>
-                    <span className="text-lg font-black text-neutral-800 dark:text-neutral-200 mt-0.5 block">{sub.avgScore} <span className="text-[10px] text-neutral-400 font-normal">pts</span></span>
-                  </div>
-                  <div>
-                    <span className="text-neutral-400 font-semibold block">Attempts Count</span>
-                    <span className="text-lg font-black text-neutral-800 dark:text-neutral-200 mt-0.5 block">{sub.attemptCount} <span className="text-[10px] text-neutral-400 font-normal">ans</span></span>
-                  </div>
-                </div>
-
-                {/* Accuracy Proportions */}
-                <div className="space-y-1.5 text-[10px]">
-                  <span className="text-neutral-400 font-semibold block">Answer Distribution:</span>
-                  <div className="w-full bg-neutral-100 dark:bg-neutral-950 rounded-full h-3 overflow-hidden flex">
-                    <div className="bg-emerald-500 h-full" style={{ width: `${sub.correctPercent}%` }} title={`Correct: ${sub.correctPercent}%`} />
-                    <div className="bg-rose-500 h-full" style={{ width: `${sub.incorrectPercent}%` }} title={`Incorrect: ${sub.incorrectPercent}%`} />
-                    <div className="bg-neutral-400 h-full" style={{ width: `${sub.skippedPercent}%` }} title={`Skipped: ${sub.skippedPercent}%`} />
-                  </div>
-                  <div className="flex gap-3 text-[9px] text-neutral-500 justify-between">
-                    <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500 inline-block"></span> Correct: {sub.correctPercent}%</span>
-                    <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-rose-500 inline-block"></span> Wrong: {sub.incorrectPercent}%</span>
-                    <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-neutral-400 inline-block"></span> Skipped: {sub.skippedPercent}%</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Detailed Chapter Heatmap Table */}
-          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-5 shadow-xs">
-            <h3 className="font-bold text-sm text-neutral-900 dark:text-neutral-50 mb-1">Academic Performance Heatmap</h3>
-            <p className="text-[11px] text-neutral-400 mb-4">Detailed diagnostic analysis across subject syllabus chapters based on student mock submissions</p>
-
-            <div className="overflow-x-auto rounded-xl border border-neutral-200 dark:border-neutral-800">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-neutral-50 dark:bg-neutral-950 text-neutral-400 uppercase font-bold tracking-wider border-b border-neutral-100 dark:border-neutral-800">
-                    <th className="px-5 py-3">Subject Criteria</th>
-                    <th className="px-5 py-3">Chapter & Topic</th>
-                    <th className="px-5 py-3">Attempt count</th>
-                    <th className="px-5 py-3">Average Accuracy</th>
-                    <th className="px-5 py-3 text-right">Difficulty state</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800 font-medium">
-                  {data.topicHeatmap?.map((item: any, idx: number) => (
-                    <tr key={idx} className="hover:bg-neutral-50/50 dark:hover:bg-neutral-800/10">
-                      <td className="px-5 py-3">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-bold text-[9px] uppercase tracking-wider ${
-                            item.subject === 'Biology'
-                              ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400'
-                              : item.subject === 'Physics'
-                              ? 'bg-blue-50 text-blue-800 dark:bg-blue-950/40 dark:text-blue-400'
-                              : 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400'
-                          }`}
-                        >
-                          {item.subject}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3 text-neutral-800 dark:text-neutral-200 font-semibold">{item.chapter}</td>
-                      <td className="px-5 py-3 text-neutral-500 font-mono text-[11px]">{item.attempts} attempts</td>
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 bg-neutral-100 dark:bg-neutral-950 rounded-full h-1.5 overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${
-                                item.avgAccuracy >= 80 ? 'bg-emerald-500' : item.avgAccuracy >= 60 ? 'bg-amber-500' : 'bg-rose-500'
-                              }`}
-                              style={{ width: `${item.avgAccuracy}%` }}
-                            />
-                          </div>
-                          <span
-                            className={`font-black text-[11px] ${
-                              item.avgAccuracy >= 80 ? 'text-emerald-600' : item.avgAccuracy >= 60 ? 'text-amber-600' : 'text-rose-600'
-                            }`}
-                          >
-                            {item.avgAccuracy}%
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                            item.avgAccuracy >= 80
-                              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400'
-                              : item.avgAccuracy >= 60
-                              ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400'
-                              : 'bg-rose-50 text-rose-700 dark:bg-rose-950/20 dark:text-rose-400'
-                          }`}
-                        >
-                          {item.avgAccuracy >= 80 ? 'Strong concept' : item.avgAccuracy >= 60 ? 'Warning' : 'Critical bottleneck'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
           </div>
         </div>
