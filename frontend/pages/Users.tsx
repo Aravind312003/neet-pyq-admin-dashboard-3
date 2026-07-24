@@ -3,12 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import {
   Users as UsersIcon,
   Search,
-  Filter,
   UserPlus,
   Shield,
   User,
   Activity,
-  Calendar,
   Mail,
   Key,
   Trash2,
@@ -18,11 +16,12 @@ import {
   AlertCircle,
   CheckCircle,
   X,
-  Clock,
   Eye
 } from 'lucide-react';
 import { UserProfile } from '../types';
 import Modal from '../components/Modal';
+
+const API_BASE_URL = 'https://neet-pyq-admin-dashboard-3.onrender.com';
 
 export default function Users() {
   const navigate = useNavigate();
@@ -59,20 +58,45 @@ export default function Users() {
       return;
     }
 
+    const endpoints = [
+      `${API_BASE_URL}/api/admin/users`,
+      `${API_BASE_URL}/admin/users`
+    ];
+
+    let response: Response | null = null;
+
     try {
       setLoading(true);
-      const res = await fetch('/api/admin/users', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      setError('');
 
-      if (res.status === 401 || res.status === 403) {
+      for (const url of endpoints) {
+        try {
+          const res = await fetch(url, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.status !== 404) {
+            response = res;
+            break;
+          }
+        } catch (e) {
+          console.warn(`Attempt failed for ${url}:`, e);
+        }
+      }
+
+      if (!response) {
+        setUsers([]);
+        setLoading(false);
+        return;
+      }
+
+      if (response.status === 401 || response.status === 403) {
         localStorage.removeItem('adminToken');
         navigate('/admin/login');
         return;
       }
 
-      const data = await res.json();
-      if (res.ok) {
+      const data = await response.json();
+      if (response.ok) {
         setUsers(data.users || []);
       } else {
         setError(data.message || 'Failed to fetch user directory');
@@ -101,7 +125,7 @@ export default function Users() {
     const token = localStorage.getItem('adminToken');
     try {
       setSubmitting(true);
-      const res = await fetch('/api/admin/users', {
+      const res = await fetch(`${API_BASE_URL}/api/admin/users`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -138,7 +162,7 @@ export default function Users() {
   const handleToggleStatus = async (user: UserProfile) => {
     const token = localStorage.getItem('adminToken');
     try {
-      const res = await fetch(`/api/admin/users/${user.id}/status`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/users/${user.id}/status`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -164,7 +188,7 @@ export default function Users() {
     if (!deletingUser) return;
     const token = localStorage.getItem('adminToken');
     try {
-      const res = await fetch(`/api/admin/users/${deletingUser.id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/users/${deletingUser.id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -190,7 +214,7 @@ export default function Users() {
 
     const token = localStorage.getItem('adminToken');
     try {
-      const res = await fetch(`/api/admin/users/${userId}/profile`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/users/${userId}/profile`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -206,8 +230,8 @@ export default function Users() {
 
   const filteredUsers = users.filter((u) => {
     const matchesSearch =
-      u.email.toLowerCase().includes(search.toLowerCase()) ||
-      u.id.toLowerCase().includes(search.toLowerCase());
+      (u.email || '').toLowerCase().includes(search.toLowerCase()) ||
+      (u.id || '').toLowerCase().includes(search.toLowerCase());
     const matchesRole = roleFilter === 'all' || u.role === roleFilter;
     const matchesStatus =
       statusFilter === 'all' ||
@@ -353,8 +377,8 @@ export default function Users() {
                   <tr key={u.id} className="hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40 transition-colors">
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-3">
-                        <div className="h-9 w-9 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 font-bold flex items-center justify-center text-xs shrink-0">
-                          {u.email.substring(0, 2).toUpperCase()}
+                        <div className="h-9 w-9 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 font-bold flex items-center justify-center text-xs shrink-0 uppercase">
+                          {(u.email || 'U').substring(0, 2)}
                         </div>
                         <div>
                           <p className="font-semibold text-neutral-900 dark:text-neutral-100">{u.email}</p>
@@ -541,7 +565,7 @@ export default function Users() {
         </div>
       )}
 
-      {/* User Profile Modal Drawer */}
+      {/* User Profile Modal */}
       {activeProfileId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-900/50 backdrop-blur-xs">
           <div className="bg-white dark:bg-neutral-900 rounded-xl max-w-lg w-full p-6 border border-neutral-200 dark:border-neutral-800 shadow-xl relative max-h-[90vh] overflow-y-auto">
@@ -565,12 +589,14 @@ export default function Users() {
             ) : profileData ? (
               <div className="mt-4 space-y-4">
                 <div className="bg-neutral-50 dark:bg-neutral-800/60 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 font-bold flex items-center justify-center text-sm">
-                    {profileData.user?.email ? profileData.user.email.substring(0, 2).toUpperCase() : 'U'}
+                  <div className="h-10 w-10 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 font-bold flex items-center justify-center text-sm uppercase">
+                    {(profileData.user?.email || 'U').substring(0, 2)}
                   </div>
                   <div>
                     <h4 className="font-bold text-sm text-neutral-900 dark:text-neutral-100">{profileData.user?.email}</h4>
-                    <p className="text-[11px] text-neutral-500">Role: {profileData.user?.role} | Created: {new Date(profileData.user?.created_at).toLocaleDateString()}</p>
+                    <p className="text-[11px] text-neutral-500">
+                      Role: {profileData.user?.role} | Created: {profileData.user?.created_at ? new Date(profileData.user.created_at).toLocaleDateString() : 'N/A'}
+                    </p>
                   </div>
                 </div>
 
