@@ -7,7 +7,6 @@ import {
   Trash2,
   Loader2,
   AlertCircle,
-  CheckCircle,
   HelpCircle,
   Flag
 } from 'lucide-react';
@@ -22,7 +21,6 @@ export default function Questions() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
 
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('');
@@ -39,20 +37,23 @@ export default function Questions() {
       return;
     }
 
-    const queryParams = new URLSearchParams({
-      page: String(page),
-      limit: '10',
-      search: search,
-      subject: filterSubject,
-      year: filterYear,
-      difficulty: filterDifficulty,
-    }).toString();
+    // Clean params so we don't send empty strings that trigger 422 errors
+    const params = new URLSearchParams();
+    params.append('page', String(page));
+    params.append('limit', '10');
 
-    // Endpoints to try sequentially
+    if (search.trim()) params.append('search', search.trim());
+    if (filterSubject) params.append('subject', filterSubject);
+    if (filterYear) params.append('year', filterYear);
+    if (filterDifficulty) params.append('difficulty', filterDifficulty);
+
+    const queryString = params.toString();
+
+    // Route fallbacks
     const endpoints = [
-      `${API_BASE_URL}/admin/questions?${queryParams}`,
-      `${API_BASE_URL}/api/admin/questions?${queryParams}`,
-      `${API_BASE_URL}/api/questions?${queryParams}`
+      `${API_BASE_URL}/admin/questions?${queryString}`,
+      `${API_BASE_URL}/api/admin/questions?${queryString}`,
+      `${API_BASE_URL}/api/questions?${queryString}`
     ];
 
     let response: Response | null = null;
@@ -83,17 +84,13 @@ export default function Questions() {
         return;
       }
 
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        throw new Error('Server returned HTML error page instead of JSON.');
-      }
-
       const data = await response.json();
+
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to fetch questions.');
+        throw new Error(data.message || data.detail || `Server error (${response.status})`);
       }
 
-      setQuestions(data.questions || data.data || []);
+      setQuestions(data.questions || data.data || (Array.isArray(data) ? data : []));
     } catch (err: any) {
       console.error('Failed to load questions:', err);
       setError(err.message || 'Failed to query question records.');
@@ -157,6 +154,7 @@ export default function Questions() {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && fetchQuestions()}
                 placeholder="Search chapters, questions or explanations..."
                 className="w-full pl-9 pr-4 py-2 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 text-xs focus:border-emerald-500 focus:outline-hidden"
               />
@@ -174,7 +172,7 @@ export default function Questions() {
                 <HelpCircle className="h-10 w-10 text-neutral-300 dark:text-neutral-700 mx-auto mb-2" />
                 <h3 className="font-bold text-sm text-neutral-800 dark:text-neutral-200">No Questions Found</h3>
                 <p className="text-xs text-neutral-400 mt-1 max-w-sm mx-auto">
-                  Verify that your backend queries the <code>neet_questions</code> table in Supabase.
+                  No matching questions found in your <code>neet_questions</code> database table.
                 </p>
               </div>
             ) : (
@@ -191,9 +189,9 @@ export default function Questions() {
                   </thead>
                   <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
                     {questions.map((q) => (
-                      <tr key={q.id} className="hover:bg-neutral-50/50 dark:hover:bg-neutral-800/10">
+                      <tr key={q.id || Math.random()} className="hover:bg-neutral-50/50 dark:hover:bg-neutral-800/10">
                         <td className="px-5 py-4 font-mono text-[10px] text-neutral-400">
-                          {String(q.id).slice(0, 10)}...
+                          {String(q.id || '').slice(0, 10)}...
                         </td>
                         <td className="px-5 py-4 font-bold text-neutral-800 dark:text-neutral-200">
                           {q.subject}
@@ -202,7 +200,7 @@ export default function Questions() {
                           {q.chapter}
                         </td>
                         <td className="px-5 py-4 text-neutral-600 dark:text-neutral-300 max-w-xs truncate">
-                          {q.question}
+                          {q.question || (q as any).question_text}
                         </td>
                         <td className="px-5 py-4">
                           <span className="font-black text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded text-[10px]">
