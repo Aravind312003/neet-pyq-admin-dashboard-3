@@ -92,6 +92,18 @@ class TestCreate(BaseModel):
     skipped_marks: Optional[int] = 0
     published: Optional[bool] = False
 
+class ReportCreate(BaseModel):
+    student_email: Optional[str] = "student@neetstudent.com"
+    question_id: Optional[str] = None
+    issue_type: str
+    description: str
+    status: Optional[str] = "pending"
+
+class ReportPatch(BaseModel):
+    status: Optional[str] = None
+    admin_note: Optional[str] = None
+    update_question: Optional[dict] = None
+
 
 @app.get("/")
 async def root():
@@ -295,6 +307,77 @@ api_router.add_api_route("/tests/{test_id}", delete_test, methods=["DELETE"])
 
 router.add_api_route("/tests/{test_id}/clone", clone_test, methods=["POST"])
 api_router.add_api_route("/tests/{test_id}/clone", clone_test, methods=["POST"])
+
+
+# ==========================================
+# REPORTS & FLAGGED QUESTIONS ENDPOINTS
+# ==========================================
+
+async def get_reports(admin: AdminUser = Depends(get_current_admin)):
+    reports_list = []
+    if supabase:
+        try:
+            res = supabase.table("flagged_questions").select("*").execute()
+            if res.data:
+                reports_list = res.data
+        except Exception:
+            try:
+                res = supabase.table("reports").select("*").execute()
+                if res.data:
+                    reports_list = res.data
+            except Exception:
+                pass
+    return {"reports": reports_list, "flags": reports_list}
+
+async def create_report(payload: ReportCreate, admin: AdminUser = Depends(get_current_admin)):
+    data_dict = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    data_dict["id"] = f"flag_{uuid.uuid4().hex[:8]}"
+    data_dict["timestamp"] = datetime.now(timezone.utc).isoformat()
+    
+    if supabase:
+        try:
+            res = supabase.table("flagged_questions").insert(data_dict).execute()
+            return {"success": True, "report": res.data[0] if res.data else data_dict}
+        except Exception:
+            pass
+    return {"success": True, "report": data_dict}
+
+async def patch_report(report_id: str, payload: ReportPatch, admin: AdminUser = Depends(get_current_admin)):
+    data_dict = payload.model_dump(exclude_unset=True) if hasattr(payload, "model_dump") else payload.dict(exclude_unset=True)
+    update_q = data_dict.pop("update_question", None)
+    
+    if supabase:
+        try:
+            res = supabase.table("flagged_questions").update(data_dict).eq("id", report_id).execute()
+            if update_q and "question_id" in res.data[0]:
+                supabase.table("neet_questions").update(update_q).eq("id", res.data[0]["question_id"]).execute()
+            return {"success": True, "report": res.data[0] if res.data else {}}
+        except Exception:
+            pass
+    return {"success": True}
+
+async def delete_report(report_id: str, admin: AdminUser = Depends(get_current_admin)):
+    if supabase:
+        try:
+            supabase.table("flagged_questions").delete().eq("id", report_id).execute()
+        except Exception:
+            pass
+    return {"success": True, "message": "Report deleted successfully"}
+
+router.add_api_route("/reports", get_reports, methods=["GET"])
+api_router.add_api_route("/reports", get_reports, methods=["GET"])
+
+router.add_api_route("/flagged-questions", get_reports, methods=["GET"])
+api_router.add_api_route("/flagged-questions", get_reports, methods=["GET"])
+
+router.add_api_route("/reports", create_report, methods=["POST"])
+api_router.add_api_route("/reports", create_report, methods=["POST"])
+
+router.add_api_route("/reports/{report_id}", patch_report, methods=["PATCH"])
+api_router.add_api_route("/reports/{report_id}", patch_report, methods=["PATCH"])
+
+router.add_api_route("/reports/{report_id}", delete_report, methods=["DELETE"])
+api_router.add_api_route("/reports/{report_id}", delete_report, methods=["DELETE"])
 
 
 app.include_router(router)

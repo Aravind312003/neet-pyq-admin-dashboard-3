@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
   Search,
-  Filter,
   CheckCircle,
   XCircle,
   Clock,
@@ -14,17 +13,14 @@ import {
   Loader2,
   Trash2,
   Edit3,
-  ExternalLink,
-  ChevronRight,
   Shield,
-  HelpCircle,
   X,
-  Send,
-  Sparkles,
   AlertTriangle
 } from 'lucide-react';
 import { StudentReport, Question } from '../types';
 import Modal from '../components/Modal';
+
+const API_BASE_URL = 'https://neet-pyq-admin-dashboard-3.onrender.com';
 
 export default function Reports() {
   const navigate = useNavigate();
@@ -41,12 +37,10 @@ export default function Reports() {
   // Active Report Details Modal
   const [selectedReport, setSelectedReport] = useState<StudentReport | null>(null);
   const [adminNote, setAdminNote] = useState('');
-  const [updatingStatus, setUpdatingStatus] = useState<string>('');
   const [isUpdating, setIsUpdating] = useState(false);
 
   // Edit Question Modal (Cascading edit)
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
-  const [savingQuestion, setSavingQuestion] = useState(false);
 
   // Manual Test Report Modal
   const [isNewReportModalOpen, setIsNewReportModalOpen] = useState(false);
@@ -66,20 +60,46 @@ export default function Reports() {
       return;
     }
 
+    const endpoints = [
+      `${API_BASE_URL}/api/admin/reports`,
+      `${API_BASE_URL}/admin/reports`,
+      `${API_BASE_URL}/api/admin/flagged-questions`
+    ];
+
+    let response: Response | null = null;
+
     try {
       setLoading(true);
-      const res = await fetch('/api/admin/reports', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      setError('');
 
-      if (res.status === 401 || res.status === 403) {
+      for (const url of endpoints) {
+        try {
+          const res = await fetch(url, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.status !== 404) {
+            response = res;
+            break;
+          }
+        } catch (e) {
+          console.warn(`Attempt failed for ${url}:`, e);
+        }
+      }
+
+      if (!response) {
+        setReports([]);
+        setLoading(false);
+        return;
+      }
+
+      if (response.status === 401 || response.status === 403) {
         localStorage.removeItem('adminToken');
         navigate('/admin/login');
         return;
       }
 
-      const data = await res.json();
-      if (res.ok) {
+      const data = await response.json();
+      if (response.ok) {
         setReports(data.reports || data.flags || []);
       } else {
         setError(data.message || 'Failed to fetch student reports');
@@ -100,7 +120,7 @@ export default function Reports() {
     const token = localStorage.getItem('adminToken');
     try {
       setIsUpdating(true);
-      const res = await fetch(`/api/admin/reports/${reportId}`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/reports/${reportId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -140,7 +160,7 @@ export default function Reports() {
     const token = localStorage.getItem('adminToken');
     try {
       setIsSubmittingReport(true);
-      const res = await fetch('/api/admin/reports', {
+      const res = await fetch(`${API_BASE_URL}/api/admin/reports`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -179,7 +199,7 @@ export default function Reports() {
     if (!deletingReport) return;
     const token = localStorage.getItem('adminToken');
     try {
-      const res = await fetch(`/api/admin/reports/${deletingReport.id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/reports/${deletingReport.id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -207,10 +227,10 @@ export default function Reports() {
 
   const filteredReports = reports.filter((r) => {
     const matchesSearch =
-      r.description.toLowerCase().includes(search.toLowerCase()) ||
-      r.student_email.toLowerCase().includes(search.toLowerCase()) ||
+      (r.description || '').toLowerCase().includes(search.toLowerCase()) ||
+      (r.student_email || '').toLowerCase().includes(search.toLowerCase()) ||
       (r.question_id && String(r.question_id).toLowerCase().includes(search.toLowerCase())) ||
-      r.id.toLowerCase().includes(search.toLowerCase());
+      (r.id || '').toLowerCase().includes(search.toLowerCase());
 
     const matchesStatus = statusFilter === 'all' || r.status === statusFilter;
     const matchesIssue = issueFilter === 'all' || r.issue_type === issueFilter;
@@ -466,7 +486,7 @@ export default function Reports() {
                     )}
 
                     <span className="text-[11px] text-neutral-400 font-mono">
-                      {new Date(report.timestamp).toLocaleString()}
+                      {report.timestamp ? new Date(report.timestamp).toLocaleString() : 'N/A'}
                     </span>
                   </div>
 
@@ -528,7 +548,7 @@ export default function Reports() {
 
             <h3 className="text-lg font-bold text-neutral-900 dark:text-neutral-50 flex items-center gap-2">
               <Shield className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-              Manage Student Report #{selectedReport.id.slice(-6)}
+              Manage Student Report #{selectedReport.id ? selectedReport.id.slice(-6) : 'N/A'}
             </h3>
 
             <div className="mt-4 space-y-4 text-xs">
@@ -541,11 +561,11 @@ export default function Reports() {
                   "{selectedReport.description}"
                 </p>
                 <p className="text-neutral-400 text-[11px]">
-                  Submitted by: <strong>{selectedReport.student_email}</strong> on {new Date(selectedReport.timestamp).toLocaleString()}
+                  Submitted by: <strong>{selectedReport.student_email}</strong> on {selectedReport.timestamp ? new Date(selectedReport.timestamp).toLocaleString() : 'N/A'}
                 </p>
               </div>
 
-              {/* Associated Question Preview if available */}
+              {/* Associated Question Preview */}
               {selectedReport.question_details ? (
                 <div className="bg-teal-50 dark:bg-teal-950/20 p-4 rounded-xl border border-teal-200 dark:border-teal-900/50 space-y-2">
                   <div className="flex items-center justify-between">
@@ -648,117 +668,6 @@ export default function Reports() {
         </div>
       )}
 
-      {/* Cascading Quick Edit Question Modal */}
-      {editingQuestion && selectedReport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-900/50 backdrop-blur-xs">
-          <div className="bg-white dark:bg-neutral-900 rounded-xl max-w-xl w-full p-6 border border-neutral-200 dark:border-neutral-800 shadow-xl relative max-h-[90vh] overflow-y-auto">
-            <button
-              onClick={() => setEditingQuestion(null)}
-              className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
-            >
-              <X className="h-5 w-5" />
-            </button>
-
-            <h3 className="text-lg font-bold text-neutral-900 dark:text-neutral-50 flex items-center gap-2">
-              <Edit3 className="h-5 w-5 text-teal-600" />
-              Cascading Question Fix for Report #{selectedReport.id.slice(-6)}
-            </h3>
-
-            <div className="mt-4 space-y-3 text-xs">
-              <div>
-                <label className="block font-semibold mb-1">Question Prompt</label>
-                <textarea
-                  rows={3}
-                  value={editingQuestion.question}
-                  onChange={(e) => setEditingQuestion({ ...editingQuestion, question: e.target.value })}
-                  className="w-full p-2.5 bg-neutral-50 dark:bg-neutral-800 border rounded-lg"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-semibold mb-1">Option A</label>
-                  <input
-                    type="text"
-                    value={editingQuestion.option_a}
-                    onChange={(e) => setEditingQuestion({ ...editingQuestion, option_a: e.target.value })}
-                    className="w-full p-2 bg-neutral-50 dark:bg-neutral-800 border rounded-lg"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1">Option B</label>
-                  <input
-                    type="text"
-                    value={editingQuestion.option_b}
-                    onChange={(e) => setEditingQuestion({ ...editingQuestion, option_b: e.target.value })}
-                    className="w-full p-2 bg-neutral-50 dark:bg-neutral-800 border rounded-lg"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1">Option C</label>
-                  <input
-                    type="text"
-                    value={editingQuestion.option_c}
-                    onChange={(e) => setEditingQuestion({ ...editingQuestion, option_c: e.target.value })}
-                    className="w-full p-2 bg-neutral-50 dark:bg-neutral-800 border rounded-lg"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1">Option D</label>
-                  <input
-                    type="text"
-                    value={editingQuestion.option_d}
-                    onChange={(e) => setEditingQuestion({ ...editingQuestion, option_d: e.target.value })}
-                    className="w-full p-2 bg-neutral-50 dark:bg-neutral-800 border rounded-lg"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold mb-1">Correct Option</label>
-                <select
-                  value={editingQuestion.correct_answer}
-                  onChange={(e) => setEditingQuestion({ ...editingQuestion, correct_answer: e.target.value as any })}
-                  className="w-full p-2 bg-neutral-50 dark:bg-neutral-800 border rounded-lg font-bold text-emerald-600"
-                >
-                  <option value="A">Option A</option>
-                  <option value="B">Option B</option>
-                  <option value="C">Option C</option>
-                  <option value="D">Option D</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-semibold mb-1">Explanation</label>
-                <textarea
-                  rows={2}
-                  value={editingQuestion.explanation}
-                  onChange={(e) => setEditingQuestion({ ...editingQuestion, explanation: e.target.value })}
-                  className="w-full p-2.5 bg-neutral-50 dark:bg-neutral-800 border rounded-lg"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-3 border-t">
-                <button
-                  type="button"
-                  onClick={() => setEditingQuestion(null)}
-                  className="px-3 py-1.5 border rounded-lg"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleUpdateStatus(selectedReport.id, 'resolved', 'Resolved & updated question text via report panel', editingQuestion)}
-                  className="px-4 py-1.5 bg-emerald-600 text-white rounded-lg font-bold"
-                >
-                  Save Changes & Mark Resolved
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Manual Report Creation Modal */}
       {isNewReportModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-900/50 backdrop-blur-xs">
@@ -854,7 +763,7 @@ export default function Reports() {
         onClose={() => setDeletingReport(null)}
         onConfirm={handleDeleteReport}
         title="Delete Report Entry"
-        message={`Are you sure you want to permanently delete this report entry #${deletingReport?.id.slice(-6)}? This action cannot be undone.`}
+        message={`Are you sure you want to permanently delete this report entry #${deletingReport?.id ? deletingReport.id.slice(-6) : ''}? This action cannot be undone.`}
         confirmText="Delete Report"
         cancelText="Cancel"
         isDanger={true}
