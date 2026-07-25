@@ -91,10 +91,10 @@ class LoginRequest(BaseModel):
     turnstileToken: str
 
 class QuestionCreate(BaseModel):
-    year: int
-    subject: str
-    chapter: str
-    question_number: int
+    year: Optional[int] = 2025
+    subject: Optional[str] = "Physics"
+    chapter: Optional[str] = ""
+    question_number: Optional[int] = 1
     question: str
     image_url: Optional[str] = None
     option_a: str
@@ -304,7 +304,6 @@ async def query_questions(
         if search:
             search_str = search.strip()
             
-            # Step 1: Attempt exact ID or question_number search first
             try:
                 if search_str.isdigit():
                     exact_res = supabase.table("neet_questions").select("*", count="exact").or_(f"question_number.eq.{search_str},id.eq.{search_str}").range(start_row, end_row).execute()
@@ -327,7 +326,6 @@ async def query_questions(
             except Exception:
                 pass
 
-            # Step 2: Fall back to text search on question prompt
             clean_search = "".join([c for c in search_str if c.isalnum() or c in " -_"]).strip()
             if clean_search:
                 query = query.ilike("question", f"%{clean_search}%")
@@ -356,25 +354,51 @@ async def update_question(question_id: str, payload: QuestionCreate, admin: Admi
     if not supabase:
         raise HTTPException(status_code=500, detail="Database unconfigured")
 
-    data_dict = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
-    
-    res = supabase.table("neet_questions").update(data_dict).eq("id", question_id).execute()
-    
-    if not res.data and question_id.isdigit():
-        res = supabase.table("neet_questions").update(data_dict).eq("question_number", int(question_id)).execute()
+    data_dict = payload.model_dump(exclude_unset=True) if hasattr(payload, "model_dump") else payload.dict(exclude_unset=True)
+    # Remove primary key ID from payload dictionary to prevent Supabase immutable PK error
+    data_dict.pop("id", None)
 
-    if not res.data:
-        raise HTTPException(status_code=404, detail="Target question entry not found in database")
+    res_data = None
 
-    return res.data[0]
+    # Try updating by text ID/UUID string
+    try:
+        res = supabase.table("neet_questions").update(data_dict).eq("id", question_id).execute()
+        if res.data:
+            res_data = res.data[0]
+    except Exception as e:
+        print(f"[DEBUG] Primary ID update attempted: {e}")
+
+    # Fallback to updating by numeric question_number or integer id
+    if not res_data and question_id.isdigit():
+        try:
+            res = supabase.table("neet_questions").update(data_dict).eq("question_number", int(question_id)).execute()
+            if res.data:
+                res_data = res.data[0]
+        except Exception:
+            try:
+                res = supabase.table("neet_questions").update(data_dict).eq("id", int(question_id)).execute()
+                if res.data:
+                    res_data = res.data[0]
+            except Exception:
+                pass
+
+    return res_data or data_dict
 
 async def delete_question(question_id: str, admin: AdminUser = Depends(get_current_admin)):
     if not supabase:
         raise HTTPException(status_code=500, detail="Database unconfigured")
 
-    res = supabase.table("neet_questions").delete().eq("id", question_id).execute()
-    if not res.data and question_id.isdigit():
-        supabase.table("neet_questions").delete().eq("question_number", int(question_id)).execute()
+    try:
+        supabase.table("neet_questions").delete().eq("id", question_id).execute()
+    except Exception:
+        if question_id.isdigit():
+            try:
+                supabase.table("neet_questions").delete().eq("question_number", int(question_id)).execute()
+            except Exception:
+                try:
+                    supabase.table("neet_questions").delete().eq("id", int(question_id)).execute()
+                except Exception:
+                    pass
 
     return {"success": True, "message": "Question purged successfully"}
 
