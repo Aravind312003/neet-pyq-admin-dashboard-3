@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Search,
   Plus,
@@ -19,6 +19,8 @@ const API_BASE_URL = 'https://neet-pyq-admin-dashboard-3.onrender.com';
 
 export default function Questions() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const initialSearch = searchParams.get('search') || '';
 
   const [activeSubTab, setActiveSubTab] = useState<'catalog' | 'flagged'>('catalog');
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -27,13 +29,21 @@ export default function Questions() {
   const [successMsg, setSuccessMsg] = useState('');
 
   // Filters and Pagination
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(initialSearch);
   const [filterSubject, setFilterSubject] = useState('');
   const [filterYear, setFilterYear] = useState('');
   const [filterDifficulty, setFilterDifficulty] = useState('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [totalQuestions, setTotalQuestions] = useState(1200);
+  const [totalQuestions, setTotalQuestions] = useState(0);
+
+  // Synchronize state if URL query param changes dynamically
+  useEffect(() => {
+    const qParam = searchParams.get('search');
+    if (qParam !== null) {
+      setSearch(qParam);
+    }
+  }, [searchParams]);
 
   const fetchQuestions = async () => {
     setLoading(true);
@@ -74,7 +84,7 @@ export default function Questions() {
       const fetchedList = data.questions || data.data || (Array.isArray(data) ? data : []);
       setQuestions(fetchedList);
       setTotalPages(data.totalPages || Math.ceil((data.total || fetchedList.length) / 10) || 1);
-      setTotalQuestions(data.total || fetchedList.length || 1200);
+      setTotalQuestions(data.total || fetchedList.length || 0);
     } catch (err: any) {
       console.error('Failed to load questions:', err);
       setError(err.message || 'Failed to query question records.');
@@ -87,7 +97,7 @@ export default function Questions() {
     if (activeSubTab === 'catalog') {
       fetchQuestions();
     }
-  }, [page, filterSubject, filterYear, filterDifficulty, activeSubTab]);
+  }, [page, search, filterSubject, filterYear, filterDifficulty, activeSubTab]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();

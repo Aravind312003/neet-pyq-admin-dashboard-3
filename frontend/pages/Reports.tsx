@@ -41,9 +41,6 @@ export default function Reports() {
   const [adminNote, setAdminNote] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
 
-  // Edit Question Modal (Cascading edit)
-  const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
-
   // Manual Test Report Modal
   const [isNewReportModalOpen, setIsNewReportModalOpen] = useState(false);
   const [newStudentEmail, setNewStudentEmail] = useState('');
@@ -139,7 +136,6 @@ export default function Reports() {
       if (res.ok) {
         setSuccessMsg(`Report #${reportId.slice(-6)} updated to "${newStatus}"`);
         setSelectedReport(null);
-        setEditingQuestion(null);
         fetchReports();
       } else {
         setError(data.message || 'Failed to update report status');
@@ -221,7 +217,7 @@ export default function Reports() {
   };
 
   const navigateToQuestion = (qId: string) => {
-    navigate(`/admin/questions?search=${qId}`);
+    navigate(`/admin/questions?search=${encodeURIComponent(qId)}`);
   };
 
   // Stats
