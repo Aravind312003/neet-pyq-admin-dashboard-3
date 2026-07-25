@@ -19,7 +19,7 @@ import {
   AlertTriangle,
   ArrowRight
 } from 'lucide-react';
-import { StudentReport, Question } from '../types';
+import { StudentReport } from '../types';
 import Modal from '../components/Modal';
 
 const API_BASE_URL = 'https://neet-pyq-admin-dashboard-3.onrender.com';
@@ -40,9 +40,6 @@ export default function Reports() {
   const [selectedReport, setSelectedReport] = useState<StudentReport | null>(null);
   const [adminNote, setAdminNote] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
-
-  // Edit Question Modal (Cascading edit)
-  const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
 
   // Manual Test Report Modal
   const [isNewReportModalOpen, setIsNewReportModalOpen] = useState(false);
@@ -137,9 +134,9 @@ export default function Reports() {
 
       const data = await res.json();
       if (res.ok) {
-        setSuccessMsg(`Report #${reportId.slice(-6)} updated to "${newStatus}"`);
+        const shortId = String(reportId).slice(-6);
+        setSuccessMsg(`Report #${shortId} updated to "${newStatus}"`);
         setSelectedReport(null);
-        setEditingQuestion(null);
         fetchReports();
       } else {
         setError(data.message || 'Failed to update report status');
@@ -192,7 +189,7 @@ export default function Reports() {
     } catch (err) {
       console.error(err);
       setError('Error submitting new report');
-    } finally {
+    } fontally {
       setIsSubmittingReport(false);
     }
   };
@@ -566,7 +563,7 @@ export default function Reports() {
 
             <h3 className="text-lg font-bold text-neutral-900 dark:text-neutral-50 flex items-center gap-2">
               <Shield className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-              Manage Student Report #{selectedReport.id ? selectedReport.id.slice(-6) : 'N/A'}
+              Manage Student Report #{selectedReport.id ? String(selectedReport.id).slice(-6) : 'N/A'}
             </h3>
 
             <div className="mt-4 space-y-4 text-xs">
@@ -805,7 +802,7 @@ export default function Reports() {
         onClose={() => setDeletingReport(null)}
         onConfirm={handleDeleteReport}
         title="Delete Report Entry"
-        message={`Are you sure you want to permanently delete this report entry #${deletingReport?.id ? deletingReport.id.slice(-6) : ''}? This action cannot be undone.`}
+        message={`Are you sure you want to permanently delete this report entry #${deletingReport?.id ? String(deletingReport.id).slice(-6) : ''}? This action cannot be undone.`}
         confirmText="Delete Report"
         cancelText="Cancel"
         isDanger={true}
