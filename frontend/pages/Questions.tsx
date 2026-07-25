@@ -37,7 +37,7 @@ export default function Questions() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalQuestions, setTotalQuestions] = useState(0);
 
-  // Synchronize state if URL query param changes dynamically
+  // Auto-sync search input if navigate param changes
   useEffect(() => {
     const qParam = searchParams.get('search');
     if (qParam !== null) {

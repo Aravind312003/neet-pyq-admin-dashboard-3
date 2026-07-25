@@ -41,6 +41,9 @@ export default function Reports() {
   const [adminNote, setAdminNote] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
 
+  // Edit Question Modal (Cascading edit)
+  const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
+
   // Manual Test Report Modal
   const [isNewReportModalOpen, setIsNewReportModalOpen] = useState(false);
   const [newStudentEmail, setNewStudentEmail] = useState('');
@@ -136,6 +139,7 @@ export default function Reports() {
       if (res.ok) {
         setSuccessMsg(`Report #${reportId.slice(-6)} updated to "${newStatus}"`);
         setSelectedReport(null);
+        setEditingQuestion(null);
         fetchReports();
       } else {
         setError(data.message || 'Failed to update report status');
@@ -216,8 +220,13 @@ export default function Reports() {
     }
   };
 
-  const navigateToQuestion = (qId: string) => {
-    navigate(`/admin/questions?search=${encodeURIComponent(qId)}`);
+  const navigateToQuestion = (report: StudentReport) => {
+    let queryTerm = report.question_id || '';
+    if (report.question_details?.question) {
+      // Use full question text for exact match if available
+      queryTerm = report.question_details.question.substring(0, 30);
+    }
+    navigate(`/admin/questions?search=${encodeURIComponent(queryTerm)}`);
   };
 
   // Stats
@@ -482,7 +491,7 @@ export default function Reports() {
 
                     {report.question_id && (
                       <button
-                        onClick={() => navigateToQuestion(report.question_id!)}
+                        onClick={() => navigateToQuestion(report)}
                         className="px-2 py-0.5 rounded-md bg-teal-500/10 text-teal-600 dark:text-teal-400 font-mono text-[11px] font-bold flex items-center gap-1 hover:underline cursor-pointer"
                         title="Click to view question in catalog"
                       >
@@ -593,7 +602,7 @@ export default function Reports() {
                     </div>
 
                     <button
-                      onClick={() => navigateToQuestion(selectedReport.question_id!)}
+                      onClick={() => navigateToQuestion(selectedReport)}
                       className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
                     >
                       Jump to Question
@@ -620,8 +629,8 @@ export default function Reports() {
                     <div className="text-neutral-400 text-xs flex items-center justify-between">
                       <span>Target Question ID: <strong>{selectedReport.question_id}</strong></span>
                       <button
-                        onClick={() => navigateToQuestion(selectedReport.question_id!)}
-                        className="text-emerald-500 hover:underline flex items-center gap-1 font-bold"
+                        onClick={() => navigateToQuestion(selectedReport)}
+                        className="text-emerald-500 hover:underline flex items-center gap-1 font-bold cursor-pointer"
                       >
                         Open in Question Registry <ArrowRight className="h-3 w-3" />
                       </button>
