@@ -189,7 +189,7 @@ export default function Reports() {
     } catch (err) {
       console.error(err);
       setError('Error submitting new report');
-    } fontally {
+    } finally {
       setIsSubmittingReport(false);
     }
   };
