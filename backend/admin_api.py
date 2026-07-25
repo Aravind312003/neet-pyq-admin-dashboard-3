@@ -90,6 +90,21 @@ class LoginRequest(BaseModel):
     password: str
     turnstileToken: str
 
+class QuestionCreate(BaseModel):
+    year: int
+    subject: str
+    chapter: str
+    question_number: int
+    question: str
+    image_url: Optional[str] = None
+    option_a: str
+    option_b: str
+    option_c: str
+    option_d: str
+    correct_answer: str
+    explanation: Optional[str] = ""
+    difficulty: Optional[str] = "Medium"
+
 class TestCreate(BaseModel):
     title: str
     description: Optional[str] = ""
@@ -257,6 +272,10 @@ router.add_api_route("/dashboard", get_dashboard_metrics, methods=["GET"])
 api_router.add_api_route("/dashboard", get_dashboard_metrics, methods=["GET"])
 
 
+# ==========================================
+# QUESTION REGISTRY ENDPOINTS (GET, POST, PUT, DELETE)
+# ==========================================
+
 async def query_questions(
     page: int = 1, 
     limit: int = 10, 
@@ -279,7 +298,11 @@ async def query_questions(
         if difficulty:
             query = query.eq("difficulty", difficulty)
         if search:
-            query = query.ilike("question", f"%{search}%")
+            search_str = search.strip()
+            if search_str.isdigit():
+                query = query.or_(f"question.ilike.%{search_str}%,question_number.eq.{search_str}")
+            else:
+                query = query.or_(f"question.ilike.%{search_str}%,id.ilike.%{search_str}%")
             
         start_row = (page - 1) * limit
         end_row = start_row + limit - 1
@@ -295,8 +318,53 @@ async def query_questions(
     except Exception as e:
         return {"questions": [], "total": 0, "totalPages": 1, "page": page, "error": str(e)}
 
+async def create_question(payload: QuestionCreate, admin: AdminUser = Depends(get_current_admin)):
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unconfigured")
+
+    data_dict = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    res = supabase.table("neet_questions").insert(data_dict).execute()
+    return res.data[0] if res.data else data_dict
+
+async def update_question(question_id: str, payload: QuestionCreate, admin: AdminUser = Depends(get_current_admin)):
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unconfigured")
+
+    data_dict = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    
+    # Attempt update by primary UUID/id string first
+    res = supabase.table("neet_questions").update(data_dict).eq("id", question_id).execute()
+    
+    # Fallback search by question_number if numeric ID passed
+    if not res.data and question_id.isdigit():
+        res = supabase.table("neet_questions").update(data_dict).eq("question_number", int(question_id)).execute()
+
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Target question entry not found in database")
+
+    return res.data[0]
+
+async def delete_question(question_id: str, admin: AdminUser = Depends(get_current_admin)):
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unconfigured")
+
+    res = supabase.table("neet_questions").delete().eq("id", question_id).execute()
+    if not res.data and question_id.isdigit():
+        supabase.table("neet_questions").delete().eq("question_number", int(question_id)).execute()
+
+    return {"success": True, "message": "Question purged successfully"}
+
 router.add_api_route("/questions", query_questions, methods=["GET"])
 api_router.add_api_route("/questions", query_questions, methods=["GET"])
+
+router.add_api_route("/questions", create_question, methods=["POST"])
+api_router.add_api_route("/questions", create_question, methods=["POST"])
+
+router.add_api_route("/questions/{question_id}", update_question, methods=["PUT"])
+api_router.add_api_route("/questions/{question_id}", update_question, methods=["PUT"])
+
+router.add_api_route("/questions/{question_id}", delete_question, methods=["DELETE"])
+api_router.add_api_route("/questions/{question_id}", delete_question, methods=["DELETE"])
 
 
 # ==========================================
@@ -485,7 +553,7 @@ api_router.add_api_route("/tests/{test_id}/clone", clone_test, methods=["POST"])
 
 
 # ==========================================
-# REPORTS ENDPOINTS (SEARCHES ALL CANDIDATE TABLES)
+# REPORTS ENDPOINTS
 # ==========================================
 
 async def get_reports(admin: AdminUser = Depends(get_current_admin)):
