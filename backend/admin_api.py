@@ -297,15 +297,40 @@ async def query_questions(
             query = query.eq("year", year)
         if difficulty:
             query = query.eq("difficulty", difficulty)
-        if search:
-            search_str = search.strip()
-            if search_str.isdigit():
-                query = query.or_(f"question.ilike.%{search_str}%,question_number.eq.{search_str}")
-            else:
-                query = query.or_(f"question.ilike.%{search_str}%,id.ilike.%{search_str}%")
             
         start_row = (page - 1) * limit
         end_row = start_row + limit - 1
+
+        if search:
+            search_str = search.strip()
+            
+            # Step 1: Attempt exact ID or question_number search first
+            try:
+                if search_str.isdigit():
+                    exact_res = supabase.table("neet_questions").select("*", count="exact").or_(f"question_number.eq.{search_str},id.eq.{search_str}").range(start_row, end_row).execute()
+                    if exact_res.data and len(exact_res.data) > 0:
+                        return {
+                            "questions": exact_res.data,
+                            "total": exact_res.count or len(exact_res.data),
+                            "totalPages": 1,
+                            "page": page
+                        }
+                else:
+                    exact_res = supabase.table("neet_questions").select("*", count="exact").eq("id", search_str).range(start_row, end_row).execute()
+                    if exact_res.data and len(exact_res.data) > 0:
+                        return {
+                            "questions": exact_res.data,
+                            "total": exact_res.count or len(exact_res.data),
+                            "totalPages": 1,
+                            "page": page
+                        }
+            except Exception:
+                pass
+
+            # Step 2: Fall back to text search on question prompt
+            clean_search = "".join([c for c in search_str if c.isalnum() or c in " -_"]).strip()
+            if clean_search:
+                query = query.ilike("question", f"%{clean_search}%")
         
         res = query.range(start_row, end_row).order("year", desc=True).execute()
         
@@ -316,6 +341,7 @@ async def query_questions(
             "page": page
         }
     except Exception as e:
+        print(f"[ERROR] Query questions error: {e}")
         return {"questions": [], "total": 0, "totalPages": 1, "page": page, "error": str(e)}
 
 async def create_question(payload: QuestionCreate, admin: AdminUser = Depends(get_current_admin)):
@@ -332,10 +358,8 @@ async def update_question(question_id: str, payload: QuestionCreate, admin: Admi
 
     data_dict = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
     
-    # Attempt update by primary UUID/id string first
     res = supabase.table("neet_questions").update(data_dict).eq("id", question_id).execute()
     
-    # Fallback search by question_number if numeric ID passed
     if not res.data and question_id.isdigit():
         res = supabase.table("neet_questions").update(data_dict).eq("question_number", int(question_id)).execute()
 

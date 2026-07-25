@@ -220,13 +220,15 @@ export default function Reports() {
     }
   };
 
+  // Navigates directly using exact target ID or question number
   const navigateToQuestion = (report: StudentReport) => {
-    let queryTerm = report.question_id || '';
-    if (report.question_details?.question) {
-      // Use full question text for exact match if available
-      queryTerm = report.question_details.question.substring(0, 30);
-    }
-    navigate(`/admin/questions?search=${encodeURIComponent(queryTerm)}`);
+    const targetKey =
+      report.question_details?.id ||
+      report.question_details?.question_number ||
+      report.question_id ||
+      '';
+
+    navigate(`/admin/questions?search=${encodeURIComponent(targetKey)}`);
   };
 
   // Stats
