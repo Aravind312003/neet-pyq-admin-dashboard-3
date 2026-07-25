@@ -355,20 +355,18 @@ async def update_question(question_id: str, payload: QuestionCreate, admin: Admi
         raise HTTPException(status_code=500, detail="Database unconfigured")
 
     data_dict = payload.model_dump(exclude_unset=True) if hasattr(payload, "model_dump") else payload.dict(exclude_unset=True)
-    # Remove primary key ID from payload dictionary to prevent Supabase immutable PK error
+    # Safely strip primary key 'id' to prevent database immutable key errors
     data_dict.pop("id", None)
 
     res_data = None
 
-    # Try updating by text ID/UUID string
     try:
         res = supabase.table("neet_questions").update(data_dict).eq("id", question_id).execute()
         if res.data:
             res_data = res.data[0]
     except Exception as e:
-        print(f"[DEBUG] Primary ID update attempted: {e}")
+        print(f"[DEBUG] Primary string ID update attempted: {e}")
 
-    # Fallback to updating by numeric question_number or integer id
     if not res_data and question_id.isdigit():
         try:
             res = supabase.table("neet_questions").update(data_dict).eq("question_number", int(question_id)).execute()
@@ -601,7 +599,7 @@ api_router.add_api_route("/tests/{test_id}/clone", clone_test, methods=["POST"])
 
 
 # ==========================================
-# REPORTS ENDPOINTS
+# REPORTS ENDPOINTS (STRICT DB MULTI-COLUMN UPDATE FIX)
 # ==========================================
 
 async def get_reports(admin: AdminUser = Depends(get_current_admin)):
@@ -663,23 +661,43 @@ async def patch_report(report_id: str, payload: ReportPatch, admin: AdminUser = 
     update_q = data_dict.pop("update_question", None)
     
     if supabase:
-        candidate_tables = ["flagged_questions", "question_reports", "reported_questions", "reports"]
+        candidate_tables = ["flagged_questions", "question_reports", "reported_questions", "user_reports", "reports"]
         for t in candidate_tables:
             try:
+                res = None
+                # 1. Match string id
                 res = supabase.table(t).update(data_dict).eq("id", report_id).execute()
-                if update_q and res.data and "question_id" in res.data[0]:
-                    supabase.table("neet_questions").update(update_q).eq("id", res.data[0]["question_id"]).execute()
-                return {"success": True, "report": res.data[0] if res.data else {}}
-            except Exception:
-                pass
+                
+                # 2. Match integer id
+                if not (res and res.data) and report_id.isdigit():
+                    res = supabase.table(t).update(data_dict).eq("id", int(report_id)).execute()
+                
+                # 3. Match report_id column
+                if not (res and res.data):
+                    res = supabase.table(t).update(data_dict).eq("report_id", report_id).execute()
+
+                if res and res.data and len(res.data) > 0:
+                    updated_row = res.data[0]
+                    if update_q and "question_id" in updated_row:
+                        try:
+                            q_target_id = updated_row["question_id"]
+                            supabase.table("neet_questions").update(update_q).eq("id", q_target_id).execute()
+                        except Exception:
+                            pass
+                    return {"success": True, "report": updated_row}
+            except Exception as e:
+                print(f"[DEBUG] Error updating report table {t}: {e}")
+                
     return {"success": True}
 
 async def delete_report(report_id: str, admin: AdminUser = Depends(get_current_admin)):
     if supabase:
-        candidate_tables = ["flagged_questions", "question_reports", "reported_questions", "reports"]
+        candidate_tables = ["flagged_questions", "question_reports", "reported_questions", "user_reports", "reports"]
         for t in candidate_tables:
             try:
-                supabase.table(t).delete().eq("id", report_id).execute()
+                res = supabase.table(t).delete().eq("id", report_id).execute()
+                if not (res and res.data) and report_id.isdigit():
+                    supabase.table(t).delete().eq("id", int(report_id)).execute()
             except Exception:
                 pass
     return {"success": True, "message": "Report deleted successfully"}
