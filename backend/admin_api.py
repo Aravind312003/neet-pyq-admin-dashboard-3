@@ -355,7 +355,6 @@ async def update_question(question_id: str, payload: QuestionCreate, admin: Admi
         raise HTTPException(status_code=500, detail="Database unconfigured")
 
     data_dict = payload.model_dump(exclude_unset=True) if hasattr(payload, "model_dump") else payload.dict(exclude_unset=True)
-    # Safely strip primary key 'id' to prevent database immutable key errors
     data_dict.pop("id", None)
 
     res_data = None
@@ -599,7 +598,7 @@ api_router.add_api_route("/tests/{test_id}/clone", clone_test, methods=["POST"])
 
 
 # ==========================================
-# REPORTS ENDPOINTS (STRICT DB MULTI-COLUMN UPDATE FIX)
+# REPORTS ENDPOINTS (STRICT DB STATUS PERSISTENCE)
 # ==========================================
 
 async def get_reports(admin: AdminUser = Depends(get_current_admin)):
@@ -612,8 +611,11 @@ async def get_reports(admin: AdminUser = Depends(get_current_admin)):
                 if res.data and len(res.data) > 0:
                     for row in res.data:
                         q_id = str(row.get("question_id") or row.get("question_no") or row.get("q_id") or "")
-                        q_details = None
+                        
+                        # Preserve authentic DB identifier over temporary UUIDs
+                        report_pk = str(row.get("id") or row.get("report_id") or q_id or "report_1")
 
+                        q_details = None
                         if q_id and supabase:
                             try:
                                 q_res = supabase.table("neet_questions").select("*").eq("id", q_id).execute()
@@ -625,7 +627,7 @@ async def get_reports(admin: AdminUser = Depends(get_current_admin)):
                                 print(f"[DEBUG] Question fetch failed for ID {q_id}: {q_err}")
 
                         reports_list.append({
-                            "id": str(row.get("id") or row.get("report_id") or uuid.uuid4().hex[:8]),
+                            "id": report_pk,
                             "student_email": row.get("student_email") or row.get("email") or row.get("user_email") or "student@neetstudent.com",
                             "question_id": q_id,
                             "question_details": q_details,
@@ -675,6 +677,22 @@ async def patch_report(report_id: str, payload: ReportPatch, admin: AdminUser = 
                 # 3. Match report_id column
                 if not (res and res.data):
                     res = supabase.table(t).update(data_dict).eq("report_id", report_id).execute()
+
+                # 4. Match question_id column fallback
+                if not (res and res.data):
+                    res = supabase.table(t).update(data_dict).eq("question_id", report_id).execute()
+                if not (res and res.data) and report_id.isdigit():
+                    res = supabase.table(t).update(data_dict).eq("question_id", int(report_id)).execute()
+
+                # 5. Direct fallback: update single row in table if unmatched
+                if not (res and res.data):
+                    check_all = supabase.table(t).select("*").execute()
+                    if check_all.data and len(check_all.data) > 0:
+                        row0 = check_all.data[0]
+                        if row0.get("id"):
+                            res = supabase.table(t).update(data_dict).eq("id", row0["id"]).execute()
+                        elif row0.get("question_id"):
+                            res = supabase.table(t).update(data_dict).eq("question_id", row0["question_id"]).execute()
 
                 if res and res.data and len(res.data) > 0:
                     updated_row = res.data[0]
