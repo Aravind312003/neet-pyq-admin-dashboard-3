@@ -485,7 +485,7 @@ api_router.add_api_route("/tests/{test_id}/clone", clone_test, methods=["POST"])
 
 
 # ==========================================
-# REPORTS ENDPOINTS (AGGREGATES STUDENT TABLES)
+# REPORTS ENDPOINTS (SEARCHES ALL CANDIDATE TABLES)
 # ==========================================
 
 async def get_reports(admin: AdminUser = Depends(get_current_admin)):
@@ -497,10 +497,24 @@ async def get_reports(admin: AdminUser = Depends(get_current_admin)):
                 res = supabase.table(table_name).select("*").execute()
                 if res.data and len(res.data) > 0:
                     for row in res.data:
+                        q_id = str(row.get("question_id") or row.get("question_no") or row.get("q_id") or "")
+                        q_details = None
+
+                        if q_id and supabase:
+                            try:
+                                q_res = supabase.table("neet_questions").select("*").eq("id", q_id).execute()
+                                if not q_res.data and q_id.isdigit():
+                                    q_res = supabase.table("neet_questions").select("*").eq("question_number", int(q_id)).execute()
+                                if q_res.data:
+                                    q_details = q_res.data[0]
+                            except Exception as q_err:
+                                print(f"[DEBUG] Question fetch failed for ID {q_id}: {q_err}")
+
                         reports_list.append({
                             "id": str(row.get("id") or row.get("report_id") or uuid.uuid4().hex[:8]),
                             "student_email": row.get("student_email") or row.get("email") or row.get("user_email") or "student@neetstudent.com",
-                            "question_id": str(row.get("question_id") or row.get("question_no") or row.get("q_id") or ""),
+                            "question_id": q_id,
+                            "question_details": q_details,
                             "issue_type": row.get("issue_type") or row.get("reason") or row.get("category") or "Incorrect answer key",
                             "description": row.get("description") or row.get("user_note") or row.get("note") or "Reported question issue submitted by candidate",
                             "status": row.get("status") or "pending",
@@ -509,7 +523,7 @@ async def get_reports(admin: AdminUser = Depends(get_current_admin)):
                         })
                     break
             except Exception as e:
-                print(f"[DEBUG] Check for table '{table_name}' skipped: {e}")
+                print(f"[DEBUG] Table check for '{table_name}' skipped: {e}")
 
     return {"reports": reports_list, "flags": reports_list}
 

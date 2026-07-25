@@ -13,9 +13,11 @@ import {
   Loader2,
   Trash2,
   Edit3,
+  ExternalLink,
   Shield,
   X,
-  AlertTriangle
+  AlertTriangle,
+  ArrowRight
 } from 'lucide-react';
 import { StudentReport, Question } from '../types';
 import Modal from '../components/Modal';
@@ -218,6 +220,10 @@ export default function Reports() {
     }
   };
 
+  const navigateToQuestion = (qId: string) => {
+    navigate(`/admin/questions?search=${qId}`);
+  };
+
   // Stats
   const totalCount = reports.length;
   const pendingCount = reports.filter((r) => r.status === 'pending').length;
@@ -403,7 +409,7 @@ export default function Reports() {
         </div>
       </div>
 
-      {/* Filters & Search Control Bar */}
+      {/* Filters Bar */}
       <div className="bg-white dark:bg-neutral-900 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-xs flex flex-col md:flex-row gap-4 justify-between items-center">
         <div className="relative w-full md:w-80">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-neutral-400" />
@@ -450,7 +456,7 @@ export default function Reports() {
         </div>
       </div>
 
-      {/* Reports Table / Card List */}
+      {/* Reports List */}
       <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden shadow-xs">
         {loading ? (
           <div className="py-20 flex flex-col items-center justify-center gap-2">
@@ -479,10 +485,15 @@ export default function Reports() {
                     </span>
 
                     {report.question_id && (
-                      <span className="px-2 py-0.5 rounded-md bg-teal-500/10 text-teal-600 dark:text-teal-400 font-mono text-[11px] font-bold flex items-center gap-1">
+                      <button
+                        onClick={() => navigateToQuestion(report.question_id!)}
+                        className="px-2 py-0.5 rounded-md bg-teal-500/10 text-teal-600 dark:text-teal-400 font-mono text-[11px] font-bold flex items-center gap-1 hover:underline cursor-pointer"
+                        title="Click to view question in catalog"
+                      >
                         <FileQuestion className="h-3 w-3" />
-                        Question ID: {report.question_id}
-                      </span>
+                        Target Q-ID: {report.question_id}
+                        {report.question_details?.year && ` (NEET ${report.question_details.year})`}
+                      </button>
                     )}
 
                     <span className="text-[11px] text-neutral-400 font-mono">
@@ -535,7 +546,7 @@ export default function Reports() {
         )}
       </div>
 
-      {/* Review & Respond Modal */}
+      {/* REVIEW & RESPOND MODAL WITH CLICKABLE LIVE QUESTION PREVIEW */}
       {selectedReport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-900/50 backdrop-blur-xs">
           <div className="bg-white dark:bg-neutral-900 rounded-xl max-w-2xl w-full p-6 border border-neutral-200 dark:border-neutral-800 shadow-xl relative max-h-[90vh] overflow-y-auto">
@@ -565,39 +576,63 @@ export default function Reports() {
                 </p>
               </div>
 
-              {/* Associated Question Preview */}
-              {selectedReport.question_details ? (
-                <div className="bg-teal-50 dark:bg-teal-950/20 p-4 rounded-xl border border-teal-200 dark:border-teal-900/50 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-teal-900 dark:text-teal-200 flex items-center gap-1.5">
-                      <FileQuestion className="h-4 w-4 text-teal-600" />
-                      Associated Question ({selectedReport.question_details.subject} - {selectedReport.question_details.chapter})
-                    </span>
+              {/* LIVE TARGET QUESTION CARD (MATCHES DB WITH YEAR, Q NO, AND DIRECT CLICK) */}
+              {selectedReport.question_id && (
+                <div className="bg-emerald-50/20 dark:bg-neutral-800/80 p-4 rounded-xl border border-emerald-500/30 dark:border-emerald-500/20 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 dark:border-neutral-700 pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 font-black text-xs">
+                        Question No: Q{selectedReport.question_details?.question_number || selectedReport.question_id}
+                      </span>
+                      {selectedReport.question_details?.year && (
+                        <span className="px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold text-xs">
+                          Year: NEET {selectedReport.question_details.year}
+                        </span>
+                      )}
+                      {selectedReport.question_details?.subject && (
+                        <span className="text-neutral-500 font-semibold text-xs">
+                          {selectedReport.question_details.subject} • {selectedReport.question_details.chapter}
+                        </span>
+                      )}
+                    </div>
+
                     <button
-                      onClick={() => setEditingQuestion(selectedReport.question_details!)}
-                      className="px-2.5 py-1 bg-teal-600 text-white rounded-lg font-bold text-[11px] hover:bg-teal-500 transition-colors cursor-pointer"
+                      onClick={() => navigateToQuestion(selectedReport.question_id!)}
+                      className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
                     >
-                      Quick Edit Question
+                      Jump to Question
+                      <ExternalLink className="h-3.5 w-3.5" />
                     </button>
                   </div>
-                  <p className="font-semibold text-neutral-800 dark:text-neutral-200">
-                    {selectedReport.question_details.question}
-                  </p>
-                  <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-600 dark:text-neutral-400 mt-2">
-                    <div>A: {selectedReport.question_details.option_a}</div>
-                    <div>B: {selectedReport.question_details.option_b}</div>
-                    <div>C: {selectedReport.question_details.option_c}</div>
-                    <div>D: {selectedReport.question_details.option_d}</div>
-                  </div>
-                  <p className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 mt-1">
-                    Correct Option: {selectedReport.question_details.correct_answer}
-                  </p>
+
+                  {selectedReport.question_details ? (
+                    <div>
+                      <p className="font-semibold text-neutral-900 dark:text-neutral-100 text-xs leading-relaxed">
+                        {selectedReport.question_details.question}
+                      </p>
+                      <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-600 dark:text-neutral-400 mt-2">
+                        <div>A: {selectedReport.question_details.option_a}</div>
+                        <div>B: {selectedReport.question_details.option_b}</div>
+                        <div>C: {selectedReport.question_details.option_c}</div>
+                        <div>D: {selectedReport.question_details.option_d}</div>
+                      </div>
+                      <p className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 mt-2">
+                        Correct Answer: Option {selectedReport.question_details.correct_answer}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="text-neutral-400 text-xs flex items-center justify-between">
+                      <span>Target Question ID: <strong>{selectedReport.question_id}</strong></span>
+                      <button
+                        onClick={() => navigateToQuestion(selectedReport.question_id!)}
+                        className="text-emerald-500 hover:underline flex items-center gap-1 font-bold"
+                      >
+                        Open in Question Registry <ArrowRight className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
                 </div>
-              ) : selectedReport.question_id ? (
-                <div className="p-3 bg-neutral-100 dark:bg-neutral-800 rounded-lg text-neutral-500">
-                  Target Question ID: <strong>{selectedReport.question_id}</strong>
-                </div>
-              ) : null}
+              )}
 
               {/* Admin Resolution Form */}
               <div className="space-y-3 pt-2">
@@ -609,7 +644,7 @@ export default function Reports() {
                     type="button"
                     onClick={() => handleUpdateStatus(selectedReport.id, 'in_review')}
                     disabled={isUpdating}
-                    className="py-2 px-3 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold hover:bg-blue-500/20 transition-colors"
+                    className="py-2 px-3 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold hover:bg-blue-500/20 transition-colors cursor-pointer"
                   >
                     Mark In Review
                   </button>
@@ -617,7 +652,7 @@ export default function Reports() {
                     type="button"
                     onClick={() => handleUpdateStatus(selectedReport.id, 'resolved')}
                     disabled={isUpdating}
-                    className="py-2 px-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold hover:bg-emerald-500/20 transition-colors"
+                    className="py-2 px-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold hover:bg-emerald-500/20 transition-colors cursor-pointer"
                   >
                     Mark Resolved
                   </button>
@@ -625,7 +660,7 @@ export default function Reports() {
                     type="button"
                     onClick={() => handleUpdateStatus(selectedReport.id, 'dismissed')}
                     disabled={isUpdating}
-                    className="py-2 px-3 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 font-bold hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+                    className="py-2 px-3 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 font-bold hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors cursor-pointer"
                   >
                     Dismiss Report
                   </button>
@@ -649,7 +684,7 @@ export default function Reports() {
                 <button
                   type="button"
                   onClick={() => setSelectedReport(null)}
-                  className="px-4 py-2 border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-600 dark:text-neutral-400 font-semibold"
+                  className="px-4 py-2 border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-600 dark:text-neutral-400 font-semibold cursor-pointer"
                 >
                   Close
                 </button>
@@ -657,7 +692,7 @@ export default function Reports() {
                   type="button"
                   onClick={() => handleUpdateStatus(selectedReport.id, selectedReport.status, adminNote)}
                   disabled={isUpdating}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold flex items-center gap-2"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold flex items-center gap-2 cursor-pointer"
                 >
                   {isUpdating && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   Save Admin Notes
@@ -702,7 +737,7 @@ export default function Reports() {
                   type="text"
                   value={newQuestionId}
                   onChange={(e) => setNewQuestionId(e.target.value)}
-                  placeholder="e.g. q_10"
+                  placeholder="e.g. 605"
                   className="w-full p-2 bg-neutral-50 dark:bg-neutral-800 border rounded-lg focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
