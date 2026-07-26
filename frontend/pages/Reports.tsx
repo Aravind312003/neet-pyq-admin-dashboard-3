@@ -120,7 +120,7 @@ export default function Reports() {
     try {
       setIsUpdating(true);
 
-      // Optimistic UI update so status changes immediately
+      // Instantly update state in UI so status tab updates smoothly
       setReports((prev) =>
         prev.map((r) =>
           r.id === reportId

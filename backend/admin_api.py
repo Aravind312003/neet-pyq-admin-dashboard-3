@@ -273,7 +273,7 @@ api_router.add_api_route("/dashboard", get_dashboard_metrics, methods=["GET"])
 
 
 # ==========================================
-# QUESTION REGISTRY ENDPOINTS (GET, POST, PUT, DELETE)
+# QUESTION REGISTRY ENDPOINTS
 # ==========================================
 
 async def query_questions(
@@ -598,7 +598,7 @@ api_router.add_api_route("/tests/{test_id}/clone", clone_test, methods=["POST"])
 
 
 # ==========================================
-# REPORTS ENDPOINTS (SCHEMA-AWARE DYNAMIC UPDATE FIX)
+# REPORTS ENDPOINTS (DYNAMIC COLUMN UPDATE FIX)
 # ==========================================
 
 async def get_reports(admin: AdminUser = Depends(get_current_admin)):
@@ -613,7 +613,7 @@ async def get_reports(admin: AdminUser = Depends(get_current_admin)):
                         q_id = str(row.get("question_id") or row.get("question_no") or row.get("q_id") or "")
                         report_pk = str(row.get("id") or row.get("report_id") or q_id or "report_1")
 
-                        # Determine raw status normalized across text/boolean column definitions
+                        # Read status across text or boolean status columns
                         st_raw = row.get("status") or row.get("state")
                         if not st_raw:
                             if row.get("is_resolved") or row.get("resolved"):
@@ -676,7 +676,6 @@ async def patch_report(report_id: str, payload: ReportPatch, admin: AdminUser = 
                 row_match = None
                 pk_col = "id"
 
-                # Check string / integer ID matches
                 for col in ["id", "report_id", "question_id"]:
                     try:
                         q_res = supabase.table(t).select("*").eq(col, report_id).execute()
@@ -701,7 +700,7 @@ async def patch_report(report_id: str, payload: ReportPatch, admin: AdminUser = 
                 if row_match:
                     match_val = row_match.get(pk_col)
 
-                    # Build update dictionary using strictly columns existing in target row
+                    # Build update fields matching ONLY existing columns in Supabase
                     clean_update = {}
                     if st_val:
                         if "status" in row_match:
