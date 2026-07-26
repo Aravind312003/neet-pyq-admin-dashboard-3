@@ -120,7 +120,7 @@ export default function Reports() {
     try {
       setIsUpdating(true);
 
-      // Optimistic UI state update so tab counts & status badge change instantly
+      // Optimistic UI update so status changes immediately
       setReports((prev) =>
         prev.map((r) =>
           r.id === reportId
@@ -229,7 +229,6 @@ export default function Reports() {
     }
   };
 
-  // Navigates directly using exact target ID or question number
   const navigateToQuestion = (report: StudentReport) => {
     const targetKey =
       report.question_details?.id ||
