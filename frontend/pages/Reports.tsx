@@ -120,7 +120,7 @@ export default function Reports() {
     try {
       setIsUpdating(true);
 
-      // Instantly update state in UI so status tab updates smoothly
+      // Instantly update React state so the item moves to Resolved view
       setReports((prev) =>
         prev.map((r) =>
           r.id === reportId
@@ -146,7 +146,6 @@ export default function Reports() {
         const shortId = String(reportId).slice(-6);
         setSuccessMsg(`Report #${shortId} updated to "${newStatus}"`);
         setSelectedReport(null);
-        fetchReports();
       } else {
         const data = await res.json();
         setError(data.message || 'Failed to update report status');

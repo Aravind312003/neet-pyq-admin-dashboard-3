@@ -273,7 +273,7 @@ api_router.add_api_route("/dashboard", get_dashboard_metrics, methods=["GET"])
 
 
 # ==========================================
-# QUESTION REGISTRY ENDPOINTS
+# QUESTION REGISTRY ENDPOINTS (GET, POST, PUT, DELETE)
 # ==========================================
 
 async def query_questions(
@@ -598,13 +598,13 @@ api_router.add_api_route("/tests/{test_id}/clone", clone_test, methods=["POST"])
 
 
 # ==========================================
-# REPORTS ENDPOINTS (DYNAMIC COLUMN UPDATE FIX)
+# REPORTS ENDPOINTS
 # ==========================================
 
 async def get_reports(admin: AdminUser = Depends(get_current_admin)):
     reports_list = []
     if supabase:
-        candidate_tables = ["flagged_questions", "question_reports", "reported_questions", "user_reports", "reports"]
+        candidate_tables = ["student_reports", "flagged_questions", "question_reports", "reported_questions", "user_reports", "reports"]
         for table_name in candidate_tables:
             try:
                 res = supabase.table(table_name).select("*").execute()
@@ -613,7 +613,6 @@ async def get_reports(admin: AdminUser = Depends(get_current_admin)):
                         q_id = str(row.get("question_id") or row.get("question_no") or row.get("q_id") or "")
                         report_pk = str(row.get("id") or row.get("report_id") or q_id or "report_1")
 
-                        # Read status across text or boolean status columns
                         st_raw = row.get("status") or row.get("state")
                         if not st_raw:
                             if row.get("is_resolved") or row.get("resolved"):
@@ -651,11 +650,11 @@ async def get_reports(admin: AdminUser = Depends(get_current_admin)):
 
 async def create_report(payload: ReportCreate, admin: AdminUser = Depends(get_current_admin)):
     data_dict = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
-    data_dict["id"] = f"flag_{uuid.uuid4().hex[:8]}"
+    data_dict["id"] = str(uuid.uuid4())
     data_dict["timestamp"] = datetime.now(timezone.utc).isoformat()
     
     if supabase:
-        candidate_tables = ["flagged_questions", "question_reports", "reported_questions", "reports"]
+        candidate_tables = ["student_reports", "flagged_questions", "question_reports", "reported_questions", "reports"]
         for t in candidate_tables:
             try:
                 res = supabase.table(t).insert(data_dict).execute()
@@ -670,7 +669,7 @@ async def patch_report(report_id: str, payload: ReportPatch, admin: AdminUser = 
     st_val = str(data_dict.get("status", "pending")).lower() if "status" in data_dict else None
 
     if supabase:
-        candidate_tables = ["flagged_questions", "question_reports", "reported_questions", "user_reports", "reports"]
+        candidate_tables = ["student_reports", "flagged_questions", "question_reports", "reported_questions", "user_reports", "reports"]
         for t in candidate_tables:
             try:
                 row_match = None
@@ -700,7 +699,6 @@ async def patch_report(report_id: str, payload: ReportPatch, admin: AdminUser = 
                 if row_match:
                     match_val = row_match.get(pk_col)
 
-                    # Build update fields matching ONLY existing columns in Supabase
                     clean_update = {}
                     if st_val:
                         if "status" in row_match:
@@ -717,8 +715,6 @@ async def patch_report(report_id: str, payload: ReportPatch, admin: AdminUser = 
 
                     if not clean_update and st_val:
                         clean_update["status"] = st_val
-                        if "admin_note" in data_dict:
-                            clean_update["admin_note"] = data_dict["admin_note"]
 
                     res = supabase.table(t).update(clean_update).eq(pk_col, match_val).execute()
 
@@ -737,7 +733,7 @@ async def patch_report(report_id: str, payload: ReportPatch, admin: AdminUser = 
 
 async def delete_report(report_id: str, admin: AdminUser = Depends(get_current_admin)):
     if supabase:
-        candidate_tables = ["flagged_questions", "question_reports", "reported_questions", "user_reports", "reports"]
+        candidate_tables = ["student_reports", "flagged_questions", "question_reports", "reported_questions", "user_reports", "reports"]
         for t in candidate_tables:
             try:
                 res = supabase.table(t).delete().eq("id", report_id).execute()
