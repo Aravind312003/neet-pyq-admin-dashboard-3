@@ -119,6 +119,16 @@ export default function Reports() {
     const token = localStorage.getItem('adminToken');
     try {
       setIsUpdating(true);
+
+      // Optimistic UI state update so tab counts & status badge change instantly
+      setReports((prev) =>
+        prev.map((r) =>
+          r.id === reportId
+            ? { ...r, status: newStatus, admin_note: noteToSave !== undefined ? noteToSave : adminNote }
+            : r
+        )
+      );
+
       const res = await fetch(`${API_BASE_URL}/api/admin/reports/${reportId}`, {
         method: 'PATCH',
         headers: {
@@ -132,18 +142,20 @@ export default function Reports() {
         })
       });
 
-      const data = await res.json();
       if (res.ok) {
         const shortId = String(reportId).slice(-6);
         setSuccessMsg(`Report #${shortId} updated to "${newStatus}"`);
         setSelectedReport(null);
         fetchReports();
       } else {
+        const data = await res.json();
         setError(data.message || 'Failed to update report status');
+        fetchReports();
       }
     } catch (err) {
       console.error(err);
       setError('An error occurred while updating report status');
+      fetchReports();
     } finally {
       setIsUpdating(false);
     }
@@ -550,7 +562,7 @@ export default function Reports() {
         )}
       </div>
 
-      {/* REVIEW & RESPOND MODAL WITH CLICKABLE LIVE QUESTION PREVIEW */}
+      {/* REVIEW & RESPOND MODAL */}
       {selectedReport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-900/50 backdrop-blur-xs">
           <div className="bg-white dark:bg-neutral-900 rounded-xl max-w-2xl w-full p-6 border border-neutral-200 dark:border-neutral-800 shadow-xl relative max-h-[90vh] overflow-y-auto">
@@ -580,7 +592,7 @@ export default function Reports() {
                 </p>
               </div>
 
-              {/* LIVE TARGET QUESTION CARD (MATCHES DB WITH YEAR, Q NO, AND DIRECT CLICK) */}
+              {/* LIVE TARGET QUESTION CARD */}
               {selectedReport.question_id && (
                 <div className="bg-emerald-50/20 dark:bg-neutral-800/80 p-4 rounded-xl border border-emerald-500/30 dark:border-emerald-500/20 space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 dark:border-neutral-700 pb-2">

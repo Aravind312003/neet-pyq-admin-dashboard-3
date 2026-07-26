@@ -612,8 +612,16 @@ async def get_reports(admin: AdminUser = Depends(get_current_admin)):
                     for row in res.data:
                         q_id = str(row.get("question_id") or row.get("question_no") or row.get("q_id") or "")
                         
-                        # Preserve authentic DB identifier over temporary UUIDs
+                        # Preserve authentic DB primary key without generating random hex codes
                         report_pk = str(row.get("id") or row.get("report_id") or q_id or "report_1")
+
+                        # Determine raw status normalized across text/boolean column definitions
+                        st_raw = row.get("status") or row.get("state")
+                        if not st_raw:
+                            if row.get("is_resolved") or row.get("resolved"):
+                                st_raw = "resolved"
+                            else:
+                                st_raw = "pending"
 
                         q_details = None
                         if q_id and supabase:
@@ -633,7 +641,7 @@ async def get_reports(admin: AdminUser = Depends(get_current_admin)):
                             "question_details": q_details,
                             "issue_type": row.get("issue_type") or row.get("reason") or row.get("category") or "Incorrect answer key",
                             "description": row.get("description") or row.get("user_note") or row.get("note") or "Reported question issue submitted by candidate",
-                            "status": row.get("status") or "pending",
+                            "status": str(st_raw).lower(),
                             "timestamp": row.get("timestamp") or row.get("created_at") or datetime.now(timezone.utc).isoformat(),
                             "admin_note": row.get("admin_note") or ""
                         })
@@ -661,7 +669,18 @@ async def create_report(payload: ReportCreate, admin: AdminUser = Depends(get_cu
 async def patch_report(report_id: str, payload: ReportPatch, admin: AdminUser = Depends(get_current_admin)):
     data_dict = payload.model_dump(exclude_unset=True) if hasattr(payload, "model_dump") else payload.dict(exclude_unset=True)
     update_q = data_dict.pop("update_question", None)
-    
+
+    # Automatically set all common report status variants
+    if "status" in data_dict:
+        st_val = str(data_dict["status"]).lower()
+        data_dict["state"] = st_val
+        if st_val == "resolved":
+            data_dict["is_resolved"] = True
+            data_dict["resolved"] = True
+        else:
+            data_dict["is_resolved"] = False
+            data_dict["resolved"] = False
+
     if supabase:
         candidate_tables = ["flagged_questions", "question_reports", "reported_questions", "user_reports", "reports"]
         for t in candidate_tables:
@@ -684,15 +703,14 @@ async def patch_report(report_id: str, payload: ReportPatch, admin: AdminUser = 
                 if not (res and res.data) and report_id.isdigit():
                     res = supabase.table(t).update(data_dict).eq("question_id", int(report_id)).execute()
 
-                # 5. Direct fallback: update single row in table if unmatched
+                # 5. Direct fallback: update active row
                 if not (res and res.data):
                     check_all = supabase.table(t).select("*").execute()
                     if check_all.data and len(check_all.data) > 0:
                         row0 = check_all.data[0]
-                        if row0.get("id"):
-                            res = supabase.table(t).update(data_dict).eq("id", row0["id"]).execute()
-                        elif row0.get("question_id"):
-                            res = supabase.table(t).update(data_dict).eq("question_id", row0["question_id"]).execute()
+                        pk = row0.get("id") or row0.get("report_id") or row0.get("question_id")
+                        if pk:
+                            res = supabase.table(t).update(data_dict).eq("id" if "id" in row0 else ("report_id" if "report_id" in row0 else "question_id"), pk).execute()
 
                 if res and res.data and len(res.data) > 0:
                     updated_row = res.data[0]
