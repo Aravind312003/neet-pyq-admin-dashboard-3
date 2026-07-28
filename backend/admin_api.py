@@ -598,13 +598,20 @@ api_router.add_api_route("/tests/{test_id}/clone", clone_test, methods=["POST"])
 
 
 # ==========================================
-# REPORTS ENDPOINTS
+# REPORTS ENDPOINTS (EXPLICIT TABLE MATCH FIX)
 # ==========================================
 
 async def get_reports(admin: AdminUser = Depends(get_current_admin)):
     reports_list = []
     if supabase:
-        candidate_tables = ["student_reports", "flagged_questions", "question_reports", "reported_questions", "user_reports", "reports"]
+        candidate_tables = [
+            "Student Issue & Question Reports",
+            "student_reports",
+            "flagged_questions",
+            "question_reports",
+            "reported_questions",
+            "reports"
+        ]
         for table_name in candidate_tables:
             try:
                 res = supabase.table(table_name).select("*").execute()
@@ -613,12 +620,7 @@ async def get_reports(admin: AdminUser = Depends(get_current_admin)):
                         q_id = str(row.get("question_id") or row.get("question_no") or row.get("q_id") or "")
                         report_pk = str(row.get("id") or row.get("report_id") or q_id or "report_1")
 
-                        st_raw = row.get("status") or row.get("state")
-                        if not st_raw:
-                            if row.get("is_resolved") or row.get("resolved"):
-                                st_raw = "resolved"
-                            else:
-                                st_raw = "pending"
+                        st_raw = row.get("status") or row.get("state") or "pending"
 
                         q_details = None
                         if q_id and supabase:
@@ -649,91 +651,100 @@ async def get_reports(admin: AdminUser = Depends(get_current_admin)):
     return {"reports": reports_list, "flags": reports_list}
 
 async def create_report(payload: ReportCreate, admin: AdminUser = Depends(get_current_admin)):
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unconfigured")
+
     data_dict = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
     data_dict["id"] = str(uuid.uuid4())
     data_dict["timestamp"] = datetime.now(timezone.utc).isoformat()
     
-    if supabase:
-        candidate_tables = ["student_reports", "flagged_questions", "question_reports", "reported_questions", "reports"]
-        for t in candidate_tables:
-            try:
-                res = supabase.table(t).insert(data_dict).execute()
-                return {"success": True, "report": res.data[0] if res.data else data_dict}
-            except Exception:
-                pass
+    candidate_tables = [
+        "Student Issue & Question Reports",
+        "student_reports",
+        "flagged_questions",
+        "question_reports",
+        "reports"
+    ]
+    for t in candidate_tables:
+        try:
+            res = supabase.table(t).insert(data_dict).execute()
+            if res.data:
+                return {"success": True, "report": res.data[0]}
+        except Exception:
+            pass
+
     return {"success": True, "report": data_dict}
 
 async def patch_report(report_id: str, payload: ReportPatch, admin: AdminUser = Depends(get_current_admin)):
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unconfigured")
+
     data_dict = payload.model_dump(exclude_unset=True) if hasattr(payload, "model_dump") else payload.dict(exclude_unset=True)
     update_q = data_dict.pop("update_question", None)
     st_val = str(data_dict.get("status", "pending")).lower() if "status" in data_dict else None
 
-    if supabase:
-        candidate_tables = ["student_reports", "flagged_questions", "question_reports", "reported_questions", "user_reports", "reports"]
-        for t in candidate_tables:
-            try:
-                row_match = None
-                pk_col = "id"
+    candidate_tables = [
+        "Student Issue & Question Reports",
+        "student_reports",
+        "flagged_questions",
+        "question_reports",
+        "reported_questions",
+        "reports"
+    ]
+    updated_record = None
 
-                for col in ["id", "report_id", "question_id"]:
+    for t in candidate_tables:
+        try:
+            clean_update = {}
+            if st_val:
+                clean_update["status"] = st_val
+            if "admin_note" in data_dict:
+                clean_update["admin_note"] = data_dict["admin_note"]
+
+            # Try updating by ID string
+            res = supabase.table(t).update(clean_update).eq("id", report_id).execute()
+            
+            # Try updating by integer ID
+            if not (res and res.data) and report_id.isdigit():
+                res = supabase.table(t).update(clean_update).eq("id", int(report_id)).execute()
+
+            # Try updating by question_id fallback
+            if not (res and res.data):
+                res = supabase.table(t).update(clean_update).eq("question_id", report_id).execute()
+
+            # Update first row fallback if table has single entry
+            if not (res and res.data):
+                all_r = supabase.table(t).select("*").limit(1).execute()
+                if all_r.data and len(all_r.data) > 0:
+                    first_id = all_r.data[0].get("id")
+                    if first_id:
+                        res = supabase.table(t).update(clean_update).eq("id", first_id).execute()
+
+            if res and res.data and len(res.data) > 0:
+                updated_record = res.data[0]
+                if update_q and "question_id" in updated_record:
                     try:
-                        q_res = supabase.table(t).select("*").eq(col, report_id).execute()
-                        if not q_res.data and report_id.isdigit():
-                            q_res = supabase.table(t).select("*").eq(col, int(report_id)).execute()
-                        if q_res.data:
-                            row_match = q_res.data[0]
-                            pk_col = col
-                            break
+                        supabase.table("neet_questions").update(update_q).eq("id", updated_record["question_id"]).execute()
                     except Exception:
                         pass
+                break
+        except Exception as e:
+            print(f"[DEBUG] Error updating report in table {t}: {e}")
 
-                if not row_match:
-                    try:
-                        q_res = supabase.table(t).select("*").limit(1).execute()
-                        if q_res.data:
-                            row_match = q_res.data[0]
-                            pk_col = "id" if "id" in row_match else ("report_id" if "report_id" in row_match else "question_id")
-                    except Exception:
-                        pass
+    if not updated_record:
+        raise HTTPException(status_code=400, detail="Failed to save status update in Supabase database")
 
-                if row_match:
-                    match_val = row_match.get(pk_col)
-
-                    clean_update = {}
-                    if st_val:
-                        if "status" in row_match:
-                            clean_update["status"] = st_val
-                        if "state" in row_match:
-                            clean_update["state"] = st_val
-                        if "is_resolved" in row_match:
-                            clean_update["is_resolved"] = (st_val == "resolved")
-                        if "resolved" in row_match:
-                            clean_update["resolved"] = (st_val == "resolved")
-                    
-                    if "admin_note" in data_dict and "admin_note" in row_match:
-                        clean_update["admin_note"] = data_dict["admin_note"]
-
-                    if not clean_update and st_val:
-                        clean_update["status"] = st_val
-
-                    res = supabase.table(t).update(clean_update).eq(pk_col, match_val).execute()
-
-                    if res and res.data and len(res.data) > 0:
-                        updated_row = res.data[0]
-                        if update_q and "question_id" in updated_row:
-                            try:
-                                supabase.table("neet_questions").update(update_q).eq("id", updated_row["question_id"]).execute()
-                            except Exception:
-                                pass
-                        return {"success": True, "report": updated_row}
-            except Exception as e:
-                print(f"[DEBUG] Error updating report table {t}: {e}")
-
-    return {"success": True}
+    return {"success": True, "report": updated_record}
 
 async def delete_report(report_id: str, admin: AdminUser = Depends(get_current_admin)):
     if supabase:
-        candidate_tables = ["student_reports", "flagged_questions", "question_reports", "reported_questions", "user_reports", "reports"]
+        candidate_tables = [
+            "Student Issue & Question Reports",
+            "student_reports",
+            "flagged_questions",
+            "question_reports",
+            "reports"
+        ]
         for t in candidate_tables:
             try:
                 res = supabase.table(t).delete().eq("id", report_id).execute()

@@ -120,15 +120,6 @@ export default function Reports() {
     try {
       setIsUpdating(true);
 
-      // Instantly update React state so the item moves to Resolved view
-      setReports((prev) =>
-        prev.map((r) =>
-          r.id === reportId
-            ? { ...r, status: newStatus, admin_note: noteToSave !== undefined ? noteToSave : adminNote }
-            : r
-        )
-      );
-
       const res = await fetch(`${API_BASE_URL}/api/admin/reports/${reportId}`, {
         method: 'PATCH',
         headers: {
@@ -142,19 +133,21 @@ export default function Reports() {
         })
       });
 
+      const data = await res.json();
+
       if (res.ok) {
         const shortId = String(reportId).slice(-6);
         setSuccessMsg(`Report #${shortId} updated to "${newStatus}"`);
         setSelectedReport(null);
+        
+        // Refresh directly from database after confirmed update
+        await fetchReports();
       } else {
-        const data = await res.json();
-        setError(data.message || 'Failed to update report status');
-        fetchReports();
+        setError(data.detail || data.message || 'Failed to update report status in database');
       }
     } catch (err) {
       console.error(err);
       setError('An error occurred while updating report status');
-      fetchReports();
     } finally {
       setIsUpdating(false);
     }
