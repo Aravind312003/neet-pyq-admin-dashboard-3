@@ -242,30 +242,119 @@ async def get_dashboard_metrics(admin: AdminUser = Depends(get_current_admin)):
     }
 
     now = datetime.now(timezone.utc)
+
+    # ------------------------------------------------------------
+    # Pull raw attempts once, then derive everything else from it.
+    # Falls back to zeros/empty if the table doesn't exist yet
+    # (e.g. before the 001_test_attempts.sql migration is run).
+    # ------------------------------------------------------------
+    attempts_data = []
+    if supabase:
+        try:
+            window_start = (now - timedelta(days=7)).isoformat()
+            attempts_res = (
+                supabase.table("test_attempts")
+                .select("id, user_id, submitted_at, status, answers")
+                .gte("submitted_at", window_start)
+                .execute()
+            )
+            attempts_data = attempts_res.data or []
+        except Exception as e:
+            print(f"[DEBUG] test_attempts query skipped (table may not exist yet): {e}")
+
+    tests_attempted = sum(1 for a in attempts_data if a.get("status") == "submitted")
+
+    day_start_24h = now - timedelta(hours=24)
+    active_user_ids_24h = set()
+    for a in attempts_data:
+        ts = a.get("submitted_at")
+        if not ts:
+            continue
+        try:
+            ts_dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if ts_dt >= day_start_24h:
+            active_user_ids_24h.add(a.get("user_id"))
+    active_users_24h = len(active_user_ids_24h)
+
     timeline7 = []
     for i in range(6, -1, -1):
         day_dt = now - timedelta(days=i)
         day_str = day_dt.strftime("%b %d")
+        day_start = day_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = day_start + timedelta(days=1)
+
+        day_users = set()
+        day_attempts = 0
+        for a in attempts_data:
+            ts = a.get("submitted_at")
+            if not ts:
+                continue
+            try:
+                ts_dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if day_start <= ts_dt < day_end:
+                day_users.add(a.get("user_id"))
+                day_attempts += 1
+
         timeline7.append({
             "date": day_str,
             "day": day_str,
             "registrations": total_users,
-            "activeUsers": 1 if i == 0 else 0,
-            "attempts": 0
+            "activeUsers": len(day_users),
+            "attempts": day_attempts
         })
+
+    # ------------------------------------------------------------
+    # Most-incorrect questions: unpack the answers jsonb across all
+    # attempts (not just the 7-day window) and rank by wrong count.
+    # ------------------------------------------------------------
+    most_incorrect = []
+    if supabase:
+        try:
+            all_answers_res = (
+                supabase.table("test_attempts")
+                .select("answers")
+                .not_.is_("answers", "null")
+                .execute()
+            )
+            wrong_counts: dict = {}
+            for row in (all_answers_res.data or []):
+                for ans in (row.get("answers") or []):
+                    if ans.get("is_correct") is False and ans.get("question_id"):
+                        qid = ans["question_id"]
+                        wrong_counts[qid] = wrong_counts.get(qid, 0) + 1
+
+            top_ids = sorted(wrong_counts, key=wrong_counts.get, reverse=True)[:10]
+            if top_ids:
+                q_res = supabase.table("neet_questions").select("id, question, subject, year").in_("id", top_ids).execute()
+                q_by_id = {str(q["id"]): q for q in (q_res.data or [])}
+                for qid in top_ids:
+                    q = q_by_id.get(str(qid))
+                    most_incorrect.append({
+                        "question_id": qid,
+                        "question": q.get("question") if q else None,
+                        "subject": q.get("subject") if q else None,
+                        "year": q.get("year") if q else None,
+                        "wrongCount": wrong_counts[qid]
+                    })
+        except Exception as e:
+            print(f"[DEBUG] mostIncorrectQuestions query skipped: {e}")
 
     return {
         "totalQuestions": total_questions,
         "totalUsers": total_users,
-        "activeUsers24h": 1,
-        "testsAttempted": 0,
+        "activeUsers24h": active_users_24h,
+        "testsAttempted": tests_attempted,
         "subjectStats": subject_stats,
         "yearStats": year_stats,
         "difficultyStats": difficulty_stats,
         "userActivity": {
             "timeline7": timeline7
         },
-        "mostIncorrectQuestions": []
+        "mostIncorrectQuestions": most_incorrect
     }
 
 router.add_api_route("/dashboard", get_dashboard_metrics, methods=["GET"])
@@ -598,160 +687,109 @@ api_router.add_api_route("/tests/{test_id}/clone", clone_test, methods=["POST"])
 
 
 # ==========================================
-# REPORTS ENDPOINTS (EXPLICIT TABLE MATCH FIX)
+# REPORTS ENDPOINTS
 # ==========================================
+
+# Single source of truth: the "reports" table is what the student site
+# actually writes to. No more guessing across 6 possible table names.
+REPORTS_TABLE = "reports"
+
 
 async def get_reports(admin: AdminUser = Depends(get_current_admin)):
     reports_list = []
     if supabase:
-        candidate_tables = [
-            "Student Issue & Question Reports",
-            "student_reports",
-            "flagged_questions",
-            "question_reports",
-            "reported_questions",
-            "reports"
-        ]
-        for table_name in candidate_tables:
-            try:
-                res = supabase.table(table_name).select("*").execute()
-                if res.data and len(res.data) > 0:
-                    for row in res.data:
-                        q_id = str(row.get("question_id") or row.get("question_no") or row.get("q_id") or "")
-                        report_pk = str(row.get("id") or row.get("report_id") or q_id or "report_1")
+        try:
+            res = supabase.table(REPORTS_TABLE).select("*").order("created_at", desc=True).execute()
+            for row in (res.data or []):
+                q_id = str(row.get("question_id") or "")
 
-                        st_raw = row.get("status") or row.get("state") or "pending"
+                q_details = None
+                if q_id:
+                    try:
+                        q_res = supabase.table("neet_questions").select("*").eq("id", q_id).execute()
+                        if not q_res.data and q_id.isdigit():
+                            q_res = supabase.table("neet_questions").select("*").eq("question_number", int(q_id)).execute()
+                        if q_res.data:
+                            q_details = q_res.data[0]
+                    except Exception as q_err:
+                        print(f"[DEBUG] Question fetch failed for ID {q_id}: {q_err}")
 
-                        q_details = None
-                        if q_id and supabase:
-                            try:
-                                q_res = supabase.table("neet_questions").select("*").eq("id", q_id).execute()
-                                if not q_res.data and q_id.isdigit():
-                                    q_res = supabase.table("neet_questions").select("*").eq("question_number", int(q_id)).execute()
-                                if q_res.data:
-                                    q_details = q_res.data[0]
-                            except Exception as q_err:
-                                print(f"[DEBUG] Question fetch failed for ID {q_id}: {q_err}")
-
-                        reports_list.append({
-                            "id": report_pk,
-                            "student_email": row.get("student_email") or row.get("email") or row.get("user_email") or "student@neetstudent.com",
-                            "question_id": q_id,
-                            "question_details": q_details,
-                            "issue_type": row.get("issue_type") or row.get("reason") or row.get("category") or "Incorrect answer key",
-                            "description": row.get("description") or row.get("user_note") or row.get("note") or "Reported question issue submitted by candidate",
-                            "status": str(st_raw).lower(),
-                            "timestamp": row.get("timestamp") or row.get("created_at") or datetime.now(timezone.utc).isoformat(),
-                            "admin_note": row.get("admin_note") or ""
-                        })
-                    break
-            except Exception as e:
-                print(f"[DEBUG] Table check for '{table_name}' skipped: {e}")
+                reports_list.append({
+                    "id": row.get("id"),
+                    "student_email": row.get("user_email") or "unknown",
+                    "question_id": q_id,
+                    "question_details": q_details,
+                    "issue_type": row.get("issue_type") or "Incorrect answer key",
+                    "description": row.get("description") or "",
+                    "status": (row.get("status") or "pending").lower(),
+                    "timestamp": row.get("created_at") or datetime.now(timezone.utc).isoformat(),
+                    "admin_note": row.get("admin_note") or ""
+                })
+        except Exception as e:
+            print(f"[DEBUG] Failed to fetch reports: {e}")
 
     return {"reports": reports_list, "flags": reports_list}
 
-async def create_report(payload: ReportCreate, admin: AdminUser = Depends(get_current_admin)):
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Database unconfigured")
 
+async def create_report(payload: ReportCreate, admin: AdminUser = Depends(get_current_admin)):
     data_dict = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
     data_dict["id"] = str(uuid.uuid4())
-    data_dict["timestamp"] = datetime.now(timezone.utc).isoformat()
-    
-    candidate_tables = [
-        "Student Issue & Question Reports",
-        "student_reports",
-        "flagged_questions",
-        "question_reports",
-        "reports"
-    ]
-    for t in candidate_tables:
-        try:
-            res = supabase.table(t).insert(data_dict).execute()
-            if res.data:
-                return {"success": True, "report": res.data[0]}
-        except Exception:
-            pass
 
+    # The "reports" table's actual column is user_email, not student_email —
+    # map it here so the admin "add report" form keeps working unchanged.
+    data_dict["user_email"] = data_dict.pop("student_email", None) or "student@neetstudent.com"
+
+    if supabase:
+        try:
+            res = supabase.table(REPORTS_TABLE).insert(data_dict).execute()
+            return {"success": True, "report": res.data[0] if res.data else data_dict}
+        except Exception as e:
+            print(f"[DEBUG] Failed to create report: {e}")
+            raise HTTPException(status_code=500, detail="Failed to create report")
     return {"success": True, "report": data_dict}
 
-async def patch_report(report_id: str, payload: ReportPatch, admin: AdminUser = Depends(get_current_admin)):
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Database unconfigured")
 
+async def patch_report(report_id: str, payload: ReportPatch, admin: AdminUser = Depends(get_current_admin)):
     data_dict = payload.model_dump(exclude_unset=True) if hasattr(payload, "model_dump") else payload.dict(exclude_unset=True)
     update_q = data_dict.pop("update_question", None)
-    st_val = str(data_dict.get("status", "pending")).lower() if "status" in data_dict else None
 
-    candidate_tables = [
-        "Student Issue & Question Reports",
-        "student_reports",
-        "flagged_questions",
-        "question_reports",
-        "reported_questions",
-        "reports"
-    ]
-    updated_record = None
+    clean_update = {}
+    if "status" in data_dict:
+        clean_update["status"] = str(data_dict["status"]).lower()
+        if clean_update["status"] == "resolved":
+            clean_update["resolved_at"] = datetime.now(timezone.utc).isoformat()
+    if "admin_note" in data_dict:
+        clean_update["admin_note"] = data_dict["admin_note"]
 
-    for t in candidate_tables:
-        try:
-            clean_update = {}
-            if st_val:
-                clean_update["status"] = st_val
-            if "admin_note" in data_dict:
-                clean_update["admin_note"] = data_dict["admin_note"]
+    if not supabase:
+        return {"success": True}
 
-            # Try updating by ID string
-            res = supabase.table(t).update(clean_update).eq("id", report_id).execute()
-            
-            # Try updating by integer ID
-            if not (res and res.data) and report_id.isdigit():
-                res = supabase.table(t).update(clean_update).eq("id", int(report_id)).execute()
+    try:
+        res = supabase.table(REPORTS_TABLE).update(clean_update).eq("id", report_id).execute()
+        if not res.data:
+            raise HTTPException(status_code=404, detail="Report not found")
 
-            # Try updating by question_id fallback
-            if not (res and res.data):
-                res = supabase.table(t).update(clean_update).eq("question_id", report_id).execute()
+        updated_row = res.data[0]
+        if update_q and updated_row.get("question_id"):
+            try:
+                supabase.table("neet_questions").update(update_q).eq("id", updated_row["question_id"]).execute()
+            except Exception as e:
+                print(f"[DEBUG] Failed to apply question correction: {e}")
 
-            # Update first row fallback if table has single entry
-            if not (res and res.data):
-                all_r = supabase.table(t).select("*").limit(1).execute()
-                if all_r.data and len(all_r.data) > 0:
-                    first_id = all_r.data[0].get("id")
-                    if first_id:
-                        res = supabase.table(t).update(clean_update).eq("id", first_id).execute()
+        return {"success": True, "report": updated_row}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[DEBUG] Error updating report {report_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update report")
 
-            if res and res.data and len(res.data) > 0:
-                updated_record = res.data[0]
-                if update_q and "question_id" in updated_record:
-                    try:
-                        supabase.table("neet_questions").update(update_q).eq("id", updated_record["question_id"]).execute()
-                    except Exception:
-                        pass
-                break
-        except Exception as e:
-            print(f"[DEBUG] Error updating report in table {t}: {e}")
-
-    if not updated_record:
-        raise HTTPException(status_code=400, detail="Failed to save status update in Supabase database")
-
-    return {"success": True, "report": updated_record}
 
 async def delete_report(report_id: str, admin: AdminUser = Depends(get_current_admin)):
     if supabase:
-        candidate_tables = [
-            "Student Issue & Question Reports",
-            "student_reports",
-            "flagged_questions",
-            "question_reports",
-            "reports"
-        ]
-        for t in candidate_tables:
-            try:
-                res = supabase.table(t).delete().eq("id", report_id).execute()
-                if not (res and res.data) and report_id.isdigit():
-                    supabase.table(t).delete().eq("id", int(report_id)).execute()
-            except Exception:
-                pass
+        try:
+            supabase.table(REPORTS_TABLE).delete().eq("id", report_id).execute()
+        except Exception as e:
+            print(f"[DEBUG] Failed to delete report {report_id}: {e}")
     return {"success": True, "message": "Report deleted successfully"}
 
 router.add_api_route("/reports", get_reports, methods=["GET"])
@@ -768,6 +806,69 @@ api_router.add_api_route("/reports/{report_id}", patch_report, methods=["PATCH"]
 
 router.add_api_route("/reports/{report_id}", delete_report, methods=["DELETE"])
 api_router.add_api_route("/reports/{report_id}", delete_report, methods=["DELETE"])
+
+# ==========================================
+# TEST ATTEMPTS ENDPOINTS
+# ==========================================
+
+async def get_test_attempts(
+    page: int = 1,
+    limit: int = 20,
+    user_id: Optional[str] = None,
+    test_id: Optional[str] = None,
+    status: Optional[str] = None,
+    admin: AdminUser = Depends(get_current_admin)
+):
+    if not supabase:
+        return {"attempts": [], "total": 0, "totalPages": 1, "page": page}
+
+    try:
+        query = supabase.table("test_attempts").select(
+            "id, user_id, test_id, subject, year, total_questions, attempted_count, "
+            "correct_count, wrong_count, skipped_count, score, max_score, "
+            "started_at, submitted_at, duration_seconds, status",
+            count="exact"
+        )
+
+        if user_id:
+            query = query.eq("user_id", user_id)
+        if test_id:
+            query = query.eq("test_id", test_id)
+        if status:
+            query = query.eq("status", status)
+
+        start_row = (page - 1) * limit
+        end_row = start_row + limit - 1
+
+        res = query.order("started_at", desc=True).range(start_row, end_row).execute()
+
+        return {
+            "attempts": res.data or [],
+            "total": res.count or 0,
+            "totalPages": ((res.count or 0) // limit) + 1 if res.count else 1,
+            "page": page
+        }
+    except Exception as e:
+        print(f"[DEBUG] test_attempts query failed (table may not exist yet): {e}")
+        return {"attempts": [], "total": 0, "totalPages": 1, "page": page, "error": str(e)}
+
+
+async def get_test_attempt_detail(attempt_id: str, admin: AdminUser = Depends(get_current_admin)):
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unconfigured")
+
+    res = supabase.table("test_attempts").select("*").eq("id", attempt_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    return {"attempt": res.data[0]}
+
+
+router.add_api_route("/test-attempts", get_test_attempts, methods=["GET"])
+api_router.add_api_route("/test-attempts", get_test_attempts, methods=["GET"])
+
+router.add_api_route("/test-attempts/{attempt_id}", get_test_attempt_detail, methods=["GET"])
+api_router.add_api_route("/test-attempts/{attempt_id}", get_test_attempt_detail, methods=["GET"])
+
 
 app.include_router(router)
 app.include_router(api_router)
