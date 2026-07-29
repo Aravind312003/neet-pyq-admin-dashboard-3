@@ -244,9 +244,7 @@ async def get_dashboard_metrics(admin: AdminUser = Depends(get_current_admin)):
     now = datetime.now(timezone.utc)
 
     # ------------------------------------------------------------
-    # Pull raw attempts once, then derive everything else from it.
-    # Falls back to zeros/empty if the table doesn't exist yet
-    # (e.g. before the 001_test_attempts.sql migration is run).
+    # Pull raw attempts once, then derive metrics from it
     # ------------------------------------------------------------
     attempts_data = []
     if supabase:
@@ -260,7 +258,7 @@ async def get_dashboard_metrics(admin: AdminUser = Depends(get_current_admin)):
             )
             attempts_data = attempts_res.data or []
         except Exception as e:
-            print(f"[DEBUG] test_attempts query skipped (table may not exist yet): {e}")
+            print(f"[DEBUG] test_attempts query skipped: {e}")
 
     tests_attempted = sum(1 for a in attempts_data if a.get("status") == "submitted")
 
@@ -308,8 +306,7 @@ async def get_dashboard_metrics(admin: AdminUser = Depends(get_current_admin)):
         })
 
     # ------------------------------------------------------------
-    # Most-incorrect questions: unpack the answers jsonb across all
-    # attempts (not just the 7-day window) and rank by wrong count.
+    # Most-incorrect questions query
     # ------------------------------------------------------------
     most_incorrect = []
     if supabase:
@@ -690,8 +687,6 @@ api_router.add_api_route("/tests/{test_id}/clone", clone_test, methods=["POST"])
 # REPORTS ENDPOINTS
 # ==========================================
 
-# Single source of truth: the "reports" table is what the student site
-# actually writes to. No more guessing across 6 possible table names.
 REPORTS_TABLE = "reports"
 
 
@@ -715,7 +710,7 @@ async def get_reports(admin: AdminUser = Depends(get_current_admin)):
                         print(f"[DEBUG] Question fetch failed for ID {q_id}: {q_err}")
 
                 reports_list.append({
-                    "id": row.get("id"),
+                    "id": str(row.get("id")),
                     "student_email": row.get("user_email") or "unknown",
                     "question_id": q_id,
                     "question_details": q_details,
@@ -734,9 +729,6 @@ async def get_reports(admin: AdminUser = Depends(get_current_admin)):
 async def create_report(payload: ReportCreate, admin: AdminUser = Depends(get_current_admin)):
     data_dict = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
     data_dict["id"] = str(uuid.uuid4())
-
-    # The "reports" table's actual column is user_email, not student_email —
-    # map it here so the admin "add report" form keeps working unchanged.
     data_dict["user_email"] = data_dict.pop("student_email", None) or "student@neetstudent.com"
 
     if supabase:
@@ -849,7 +841,7 @@ async def get_test_attempts(
             "page": page
         }
     except Exception as e:
-        print(f"[DEBUG] test_attempts query failed (table may not exist yet): {e}")
+        print(f"[DEBUG] test_attempts query failed: {e}")
         return {"attempts": [], "total": 0, "totalPages": 1, "page": page, "error": str(e)}
 
 

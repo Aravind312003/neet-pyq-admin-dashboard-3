@@ -17,7 +17,8 @@ import {
   Shield,
   X,
   AlertTriangle,
-  ArrowRight
+  ArrowRight,
+  Radio
 } from 'lucide-react';
 import { StudentReport } from '../types';
 import Modal from '../components/Modal';
@@ -52,7 +53,7 @@ export default function Reports() {
   // Deletion Modal
   const [deletingReport, setDeletingReport] = useState<StudentReport | null>(null);
 
-  const fetchReports = async () => {
+  const fetchReports = async (showLoadingSpinner = true) => {
     const token = localStorage.getItem('adminToken');
     if (!token) {
       navigate('/admin/login');
@@ -68,8 +69,7 @@ export default function Reports() {
     let response: Response | null = null;
 
     try {
-      setLoading(true);
-      setError('');
+      if (showLoadingSpinner) setLoading(true);
 
       for (const url of endpoints) {
         try {
@@ -87,7 +87,7 @@ export default function Reports() {
 
       if (!response) {
         setReports([]);
-        setLoading(false);
+        if (showLoadingSpinner) setLoading(false);
         return;
       }
 
@@ -107,18 +107,34 @@ export default function Reports() {
       console.error(err);
       setError('Failed to connect to backend server');
     } finally {
-      setLoading(false);
+      if (showLoadingSpinner) setLoading(false);
     }
   };
 
+  // 🔴 LIVE UPDATE HOOK: Polls backend every 3 seconds for new student submissions
   useEffect(() => {
-    fetchReports();
+    fetchReports(true);
+
+    const pollTimer = setInterval(() => {
+      fetchReports(false);
+    }, 3000);
+
+    return () => clearInterval(pollTimer);
   }, [navigate]);
 
   const handleUpdateStatus = async (reportId: string, newStatus: string, noteToSave?: string, updatedQ?: any) => {
     const token = localStorage.getItem('adminToken');
     try {
       setIsUpdating(true);
+
+      // Optimistic update
+      setReports((prev) =>
+        prev.map((r) =>
+          r.id === reportId
+            ? { ...r, status: newStatus, admin_note: noteToSave !== undefined ? noteToSave : adminNote }
+            : r
+        )
+      );
 
       const res = await fetch(`${API_BASE_URL}/api/admin/reports/${reportId}`, {
         method: 'PATCH',
@@ -133,21 +149,20 @@ export default function Reports() {
         })
       });
 
-      const data = await res.json();
-
       if (res.ok) {
         const shortId = String(reportId).slice(-6);
         setSuccessMsg(`Report #${shortId} updated to "${newStatus}"`);
         setSelectedReport(null);
-        
-        // Refresh directly from database after confirmed update
-        await fetchReports();
+        await fetchReports(false);
       } else {
-        setError(data.detail || data.message || 'Failed to update report status in database');
+        const data = await res.json();
+        setError(data.message || 'Failed to update report status');
+        await fetchReports(false);
       }
     } catch (err) {
       console.error(err);
       setError('An error occurred while updating report status');
+      await fetchReports(false);
     } finally {
       setIsUpdating(false);
     }
@@ -186,7 +201,7 @@ export default function Reports() {
         setNewQuestionId('');
         setNewIssueType('Incorrect answer key');
         setNewDescription('');
-        fetchReports();
+        await fetchReports(false);
       } else {
         setError(data.message || 'Failed to log report');
       }
@@ -210,7 +225,7 @@ export default function Reports() {
       if (res.ok) {
         setSuccessMsg('Report deleted successfully');
         setDeletingReport(null);
-        fetchReports();
+        await fetchReports(false);
       } else {
         const data = await res.json();
         setError(data.message || 'Failed to delete report');
@@ -295,10 +310,15 @@ export default function Reports() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-neutral-900 dark:text-neutral-50 flex items-center gap-2.5">
-            <AlertCircle className="h-6 w-6 text-amber-500" />
-            Student Issue & Question Reports
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-black tracking-tight text-neutral-900 dark:text-neutral-50 flex items-center gap-2.5">
+              <AlertCircle className="h-6 w-6 text-amber-500" />
+              Student Issue & Question Reports
+            </h1>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 animate-pulse">
+              <Radio className="h-3 w-3" /> Live
+            </span>
+          </div>
           <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
             Review reported question errors, typo feedback, and website issue tickets submitted by NEET students.
           </p>
