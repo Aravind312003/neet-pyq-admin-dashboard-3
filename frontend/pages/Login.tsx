@@ -206,24 +206,6 @@ export default function Login() {
             {/* Turnstile Security Widget */}
             <Turnstile onVerify={(token) => setTurnstileToken(token)} />
 
-            {/* Default Admin Quick-Fill Helper */}
-            <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3 text-xs flex items-center justify-between">
-              <div>
-                <p className="text-neutral-400 text-[11px] font-medium">Default Administrator Account:</p>
-                <p className="text-emerald-400 font-mono font-semibold text-[11px]">admin@neetplatform.com</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail('admin@neetplatform.com');
-                  setPassword('admin123');
-                }}
-                className="px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded text-[10px] font-bold transition-colors cursor-pointer"
-              >
-                Auto-fill
-              </button>
-            </div>
-
             <button
               type="submit"
               disabled={loading || success}
