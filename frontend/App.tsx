@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 
 import Login from './pages/Login';
+import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Questions from './pages/Questions';
 import Tests from './pages/Tests';
@@ -74,13 +75,13 @@ function ProtectedLayout() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setDarkMode(!darkMode)}
-            className="p-2 rounded-lg text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+            className="p-2 rounded-lg text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer"
           >
             {darkMode ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4" />}
           </button>
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300"
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 cursor-pointer"
           >
             {mobileMenuOpen ? 'Close' : 'Menu'}
           </button>
@@ -111,7 +112,7 @@ function ProtectedLayout() {
           })}
           <button
             onClick={handleLogout}
-            className="w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold text-red-600 dark:text-red-400 flex items-center gap-3"
+            className="w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold text-red-600 dark:text-red-400 flex items-center gap-3 cursor-pointer"
           >
             <LogOut className="h-4 w-4" />
             Sign Out
@@ -198,6 +199,9 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/admin/login" element={<Login />} />
+        <Route path="/staff/login" element={<Navigate to="/admin/login" replace />} />
+        <Route path="/staff/register" element={<Register />} />
+        <Route path="/admin/register" element={<Register />} />
         
         <Route element={<ProtectedLayout />}>
           <Route path="/admin/dashboard" element={<Dashboard />} />

@@ -1,9 +1,21 @@
 export interface UserProfile {
   id: string;
   email: string;
-  role: 'admin' | 'student';
+  role: 'admin' | 'teacher' | 'student';
   created_at: string;
   disabled?: boolean;
+}
+
+export interface StaffRegistrationRequest {
+  id: string;
+  auth_user_id: string;
+  full_name: string;
+  email: string;
+  requested_role: 'teacher' | 'admin';
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
 }
 
 export interface Question {

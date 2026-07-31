@@ -16,9 +16,14 @@ import {
   AlertCircle,
   CheckCircle,
   X,
-  Eye
+  Eye,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  UserCheck,
+  GraduationCap
 } from 'lucide-react';
-import { UserProfile } from '../types';
+import { UserProfile, StaffRegistrationRequest } from '../types';
 import Modal from '../components/Modal';
 
 const API_BASE_URL = 'https://neet-pyq-admin-dashboard-3.onrender.com';
@@ -26,21 +31,31 @@ const API_BASE_URL = 'https://neet-pyq-admin-dashboard-3.onrender.com';
 export default function Users() {
   const navigate = useNavigate();
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [staffRequests, setStaffRequests] = useState<StaffRegistrationRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Filters & Search
+  // Main Tab Navigation
+  const [activeTab, setActiveTab] = useState<'directory' | 'staff_requests'>('directory');
+
+  // Directory Filters & Search
   const [search, setSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState<'all' | 'student' | 'admin'>('all');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'student' | 'teacher' | 'admin'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'suspended'>('all');
+
+  // Staff Requests Filter & Actions
+  const [staffReqFilter, setStaffReqFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [approvingReq, setApprovingReq] = useState<StaffRegistrationRequest | null>(null);
+  const [assignedRole, setAssignedRole] = useState<'teacher' | 'admin'>('teacher');
+  const [actionLoading, setActionLoading] = useState(false);
 
   // Modals & User actions
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [newRole, setNewRole] = useState<'student' | 'admin'>('student');
+  const [newRole, setNewRole] = useState<'student' | 'teacher' | 'admin'>('student');
   const [submitting, setSubmitting] = useState(false);
 
   // User Profile Drawer/Modal
@@ -60,7 +75,8 @@ export default function Users() {
 
     const endpoints = [
       `${API_BASE_URL}/api/admin/users`,
-      `${API_BASE_URL}/admin/users`
+      `${API_BASE_URL}/admin/users`,
+      '/api/admin/users'
     ];
 
     let response: Response | null = null;
@@ -109,8 +125,34 @@ export default function Users() {
     }
   };
 
+  const fetchStaffRequests = async () => {
+    const token = localStorage.getItem('adminToken');
+    if (!token) return;
+
+    const endpoints = [
+      `${API_BASE_URL}/api/admin/staff-requests`,
+      '/api/admin/staff-requests'
+    ];
+
+    for (const url of endpoints) {
+      try {
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setStaffRequests(data.requests || []);
+          break;
+        }
+      } catch (err) {
+        console.warn(`Attempt failed for staff requests at ${url}:`, err);
+      }
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
+    fetchStaffRequests();
   }, [navigate]);
 
   const handleAddUser = async (e: React.FormEvent) => {
@@ -207,6 +249,61 @@ export default function Users() {
     }
   };
 
+  const handleApproveStaff = async () => {
+    if (!approvingReq) return;
+    setActionLoading(true);
+    setError('');
+    const token = localStorage.getItem('adminToken');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/staff-requests/${approvingReq.id}/approve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ final_role: assignedRole })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setSuccessMsg(`Approved staff request for ${approvingReq.email} as ${assignedRole.toUpperCase()}.`);
+        setApprovingReq(null);
+        fetchStaffRequests();
+        fetchUsers();
+      } else {
+        setError(data.message || 'Failed to approve staff request.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Error approving staff request.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRejectStaff = async (requestId: string, email: string) => {
+    const token = localStorage.getItem('adminToken');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/staff-requests/${requestId}/reject`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccessMsg(`Rejected staff registration request for ${email}.`);
+        fetchStaffRequests();
+      } else {
+        setError(data.message || 'Failed to reject staff request.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Error rejecting staff request.');
+    }
+  };
+
   const viewProfile = async (userId: string) => {
     setActiveProfileId(userId);
     setProfileData(null);
@@ -241,6 +338,17 @@ export default function Users() {
     return matchesSearch && matchesRole && matchesStatus;
   });
 
+  const pendingRequestsCount = staffRequests.filter((r) => r.status === 'pending').length;
+
+  const filteredStaffRequests = staffRequests.filter((r) => {
+    const matchesSearch =
+      (r.email || '').toLowerCase().includes(search.toLowerCase()) ||
+      (r.full_name && r.full_name.toLowerCase().includes(search.toLowerCase()));
+    const matchesFilter = staffReqFilter === 'all' || r.status === staffReqFilter;
+
+    return matchesSearch && matchesFilter;
+  });
+
   return (
     <div className="space-y-6 pb-12">
       {/* Header */}
@@ -248,10 +356,10 @@ export default function Users() {
         <div>
           <h1 className="text-2xl font-black tracking-tight text-neutral-900 dark:text-neutral-50 flex items-center gap-2">
             <UsersIcon className="h-6 w-6 text-teal-600 dark:text-teal-400" />
-            User Management Directory
+            User & Staff Management
           </h1>
           <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-            Manage student registrations, admin credentials, access permissions, and session activity.
+            Manage student registrations, staff account approvals, access permissions, and roles.
           </p>
         </div>
 
@@ -261,6 +369,38 @@ export default function Users() {
         >
           <UserPlus className="h-4 w-4" />
           Add New User
+        </button>
+      </div>
+
+      {/* Main Tab Navigation */}
+      <div className="flex items-center gap-2 border-b border-neutral-200 dark:border-neutral-800 pb-2">
+        <button
+          onClick={() => setActiveTab('directory')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'directory'
+              ? 'bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 shadow-sm'
+              : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+          }`}
+        >
+          <UsersIcon className="h-4 w-4" />
+          User Directory ({users.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('staff_requests')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer relative ${
+            activeTab === 'staff_requests'
+              ? 'bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 shadow-sm'
+              : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+          }`}
+        >
+          <UserCheck className="h-4 w-4" />
+          Pending Staff Requests
+          {pendingRequestsCount > 0 && (
+            <span className="ml-1 px-2 py-0.5 rounded-full bg-amber-500 text-black font-black text-[10px] animate-pulse">
+              {pendingRequestsCount}
+            </span>
+          )}
         </button>
       </div>
 
@@ -289,162 +429,405 @@ export default function Users() {
         </div>
       )}
 
-      {/* Filters Bar */}
-      <div className="bg-white dark:bg-neutral-900 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-xs flex flex-col sm:flex-row gap-4 justify-between items-center">
-        <div className="relative w-full sm:w-80">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-neutral-400" />
-          <input
-            type="text"
-            placeholder="Search users by email or ID..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-teal-500 text-neutral-900 dark:text-neutral-100"
-          />
-        </div>
+      {activeTab === 'directory' ? (
+        <>
+          {/* Filters Bar */}
+          <div className="bg-white dark:bg-neutral-900 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-xs flex flex-col sm:flex-row gap-4 justify-between items-center">
+            <div className="relative w-full sm:w-80">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-neutral-400" />
+              <input
+                type="text"
+                placeholder="Search users by email or ID..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-teal-500 text-neutral-900 dark:text-neutral-100"
+              />
+            </div>
 
-        <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-          <div className="flex items-center gap-1.5 bg-neutral-100 dark:bg-neutral-800 p-1 rounded-lg text-xs">
-            <button
-              onClick={() => setRoleFilter('all')}
-              className={`px-3 py-1 rounded-md font-medium transition-colors ${roleFilter === 'all' ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-50 shadow-xs' : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400'}`}
-            >
-              All Roles
-            </button>
-            <button
-              onClick={() => setRoleFilter('student')}
-              className={`px-3 py-1 rounded-md font-medium transition-colors ${roleFilter === 'student' ? 'bg-white dark:bg-neutral-700 text-teal-600 dark:text-teal-400 shadow-xs' : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400'}`}
-            >
-              Students
-            </button>
-            <button
-              onClick={() => setRoleFilter('admin')}
-              className={`px-3 py-1 rounded-md font-medium transition-colors ${roleFilter === 'admin' ? 'bg-white dark:bg-neutral-700 text-indigo-600 dark:text-indigo-400 shadow-xs' : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400'}`}
-            >
-              Admins
-            </button>
+            <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+              <div className="flex items-center gap-1.5 bg-neutral-100 dark:bg-neutral-800 p-1 rounded-lg text-xs">
+                <button
+                  onClick={() => setRoleFilter('all')}
+                  className={`px-3 py-1 rounded-md font-medium transition-colors ${roleFilter === 'all' ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-50 shadow-xs' : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400'}`}
+                >
+                  All Roles
+                </button>
+                <button
+                  onClick={() => setRoleFilter('student')}
+                  className={`px-3 py-1 rounded-md font-medium transition-colors ${roleFilter === 'student' ? 'bg-white dark:bg-neutral-700 text-teal-600 dark:text-teal-400 shadow-xs' : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400'}`}
+                >
+                  Students
+                </button>
+                <button
+                  onClick={() => setRoleFilter('teacher')}
+                  className={`px-3 py-1 rounded-md font-medium transition-colors ${roleFilter === 'teacher' ? 'bg-white dark:bg-neutral-700 text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400'}`}
+                >
+                  Teachers
+                </button>
+                <button
+                  onClick={() => setRoleFilter('admin')}
+                  className={`px-3 py-1 rounded-md font-medium transition-colors ${roleFilter === 'admin' ? 'bg-white dark:bg-neutral-700 text-indigo-600 dark:text-indigo-400 shadow-xs' : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400'}`}
+                >
+                  Admins
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1.5 bg-neutral-100 dark:bg-neutral-800 p-1 rounded-lg text-xs">
+                <button
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-3 py-1 rounded-md font-medium transition-colors ${statusFilter === 'all' ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-50 shadow-xs' : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400'}`}
+                >
+                  All Status
+                </button>
+                <button
+                  onClick={() => setStatusFilter('active')}
+                  className={`px-3 py-1 rounded-md font-medium transition-colors ${statusFilter === 'active' ? 'bg-white dark:bg-neutral-700 text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400'}`}
+                >
+                  Active
+                </button>
+                <button
+                  onClick={() => setStatusFilter('suspended')}
+                  className={`px-3 py-1 rounded-md font-medium transition-colors ${statusFilter === 'suspended' ? 'bg-white dark:bg-neutral-700 text-red-600 dark:text-red-400 shadow-xs' : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400'}`}
+                >
+                  Suspended
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div className="flex items-center gap-1.5 bg-neutral-100 dark:bg-neutral-800 p-1 rounded-lg text-xs">
-            <button
-              onClick={() => setStatusFilter('all')}
-              className={`px-3 py-1 rounded-md font-medium transition-colors ${statusFilter === 'all' ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-50 shadow-xs' : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400'}`}
-            >
-              All Status
-            </button>
-            <button
-              onClick={() => setStatusFilter('active')}
-              className={`px-3 py-1 rounded-md font-medium transition-colors ${statusFilter === 'active' ? 'bg-white dark:bg-neutral-700 text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400'}`}
-            >
-              Active
-            </button>
-            <button
-              onClick={() => setStatusFilter('suspended')}
-              className={`px-3 py-1 rounded-md font-medium transition-colors ${statusFilter === 'suspended' ? 'bg-white dark:bg-neutral-700 text-red-600 dark:text-red-400 shadow-xs' : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400'}`}
-            >
-              Suspended
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Users Table */}
-      <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden shadow-xs">
-        {loading ? (
-          <div className="py-20 flex flex-col items-center justify-center gap-2">
-            <Loader2 className="h-8 w-8 animate-spin text-teal-600 dark:text-teal-400" />
-            <p className="text-xs text-neutral-500">Loading user database...</p>
-          </div>
-        ) : filteredUsers.length === 0 ? (
-          <div className="py-16 text-center">
-            <UsersIcon className="h-10 w-10 text-neutral-300 dark:text-neutral-700 mx-auto mb-3" />
-            <h3 className="text-sm font-bold text-neutral-800 dark:text-neutral-200">No users match criteria</h3>
-            <p className="text-xs text-neutral-400 mt-1">Try adjusting your filters or search query.</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-neutral-50 dark:bg-neutral-800/50 border-b border-neutral-200 dark:border-neutral-800 text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
-                  <th className="py-3.5 px-4">User Identity</th>
-                  <th className="py-3.5 px-4">Role</th>
-                  <th className="py-3.5 px-4">Account Status</th>
-                  <th className="py-3.5 px-4">Registered Date</th>
-                  <th className="py-3.5 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/60 text-xs">
-                {filteredUsers.map((u) => (
-                  <tr key={u.id} className="hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40 transition-colors">
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-3">
-                        <div className="h-9 w-9 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 font-bold flex items-center justify-center text-xs shrink-0 uppercase">
-                          {(u.email || 'U').substring(0, 2)}
-                        </div>
-                        <div>
-                          <p className="font-semibold text-neutral-900 dark:text-neutral-100">{u.email}</p>
-                          <p className="text-[10px] text-neutral-400 font-mono">ID: {u.id}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${
-                        u.role === 'admin'
-                          ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20'
-                          : 'bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20'
-                      }`}>
-                        {u.role === 'admin' ? <Shield className="h-3 w-3" /> : <User className="h-3 w-3" />}
-                        {u.role === 'admin' ? 'Administrator' : 'Student'}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${
-                        u.disabled
-                          ? 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'
-                          : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                      }`}>
-                        <span className={`h-1.5 w-1.5 rounded-full ${u.disabled ? 'bg-red-500' : 'bg-emerald-500'}`} />
-                        {u.disabled ? 'Suspended' : 'Active'}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-neutral-500 dark:text-neutral-400 font-mono text-[11px]">
-                      {u.created_at ? new Date(u.created_at).toLocaleDateString() : 'N/A'}
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => viewProfile(u.id)}
-                          className="p-1.5 text-neutral-500 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition-colors"
-                          title="View Profile Analytics"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleToggleStatus(u)}
-                          className={`p-1.5 rounded-lg transition-colors ${
+          {/* Users Table */}
+          <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden shadow-xs">
+            {loading ? (
+              <div className="py-20 flex flex-col items-center justify-center gap-2">
+                <Loader2 className="h-8 w-8 animate-spin text-teal-600 dark:text-teal-400" />
+                <p className="text-xs text-neutral-500">Loading user database...</p>
+              </div>
+            ) : filteredUsers.length === 0 ? (
+              <div className="py-16 text-center">
+                <UsersIcon className="h-10 w-10 text-neutral-300 dark:text-neutral-700 mx-auto mb-3" />
+                <h3 className="text-sm font-bold text-neutral-800 dark:text-neutral-200">No users match criteria</h3>
+                <p className="text-xs text-neutral-400 mt-1">Try adjusting your filters or search query.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-neutral-50 dark:bg-neutral-800/50 border-b border-neutral-200 dark:border-neutral-800 text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
+                      <th className="py-3.5 px-4">User Identity</th>
+                      <th className="py-3.5 px-4">Role</th>
+                      <th className="py-3.5 px-4">Account Status</th>
+                      <th className="py-3.5 px-4">Registered Date</th>
+                      <th className="py-3.5 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/60 text-xs">
+                    {filteredUsers.map((u) => (
+                      <tr key={u.id} className="hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40 transition-colors">
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-3">
+                            <div className="h-9 w-9 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 font-bold flex items-center justify-center text-xs shrink-0 uppercase">
+                              {(u.email || 'U').substring(0, 2)}
+                            </div>
+                            <div>
+                              <p className="font-semibold text-neutral-900 dark:text-neutral-100">{u.email}</p>
+                              <p className="text-[10px] text-neutral-400 font-mono">ID: {u.id}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                            u.role === 'admin'
+                              ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20'
+                              : u.role === 'teacher'
+                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                              : 'bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20'
+                          }`}>
+                            {u.role === 'admin' ? <Shield className="h-3 w-3" /> : u.role === 'teacher' ? <GraduationCap className="h-3 w-3" /> : <User className="h-3 w-3" />}
+                            {u.role === 'admin' ? 'Administrator' : u.role === 'teacher' ? 'Teacher' : 'Student'}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${
                             u.disabled
-                              ? 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
-                              : 'text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30'
-                          }`}
-                          title={u.disabled ? 'Re-activate Account' : 'Suspend Account'}
-                        >
-                          {u.disabled ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
-                        </button>
-                        <button
-                          onClick={() => setDeletingUser(u)}
-                          className="p-1.5 text-neutral-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors"
-                          title="Delete User"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                              ? 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'
+                              : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                          }`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${u.disabled ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                            {u.disabled ? 'Suspended' : 'Active'}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-neutral-500 dark:text-neutral-400 font-mono text-[11px]">
+                          {u.created_at ? new Date(u.created_at).toLocaleDateString() : 'N/A'}
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => viewProfile(u.id)}
+                              className="p-1.5 text-neutral-500 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer"
+                              title="View Profile Analytics"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleToggleStatus(u)}
+                              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                u.disabled
+                                  ? 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
+                                  : 'text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30'
+                              }`}
+                              title={u.disabled ? 'Re-activate Account' : 'Suspend Account'}
+                            >
+                              {u.disabled ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+                            </button>
+                            <button
+                              onClick={() => setDeletingUser(u)}
+                              className="p-1.5 text-neutral-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors cursor-pointer"
+                              title="Delete User"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      ) : (
+        /* STAFF REGISTRATION REQUESTS TAB */
+        <div className="space-y-4">
+          <div className="bg-white dark:bg-neutral-900 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-xs flex flex-col sm:flex-row gap-4 justify-between items-center">
+            <div className="relative w-full sm:w-80">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-neutral-400" />
+              <input
+                type="text"
+                placeholder="Search staff requests by name or email..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-teal-500 text-neutral-900 dark:text-neutral-100"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5 bg-neutral-100 dark:bg-neutral-800 p-1 rounded-lg text-xs">
+              <button
+                onClick={() => setStaffReqFilter('all')}
+                className={`px-3 py-1 rounded-md font-medium transition-colors ${staffReqFilter === 'all' ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-50 shadow-xs' : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400'}`}
+              >
+                All Status ({staffRequests.length})
+              </button>
+              <button
+                onClick={() => setStaffReqFilter('pending')}
+                className={`px-3 py-1 rounded-md font-medium transition-colors ${staffReqFilter === 'pending' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold shadow-xs' : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400'}`}
+              >
+                Pending ({staffRequests.filter((r) => r.status === 'pending').length})
+              </button>
+              <button
+                onClick={() => setStaffReqFilter('approved')}
+                className={`px-3 py-1 rounded-md font-medium transition-colors ${staffReqFilter === 'approved' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold shadow-xs' : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400'}`}
+              >
+                Approved ({staffRequests.filter((r) => r.status === 'approved').length})
+              </button>
+              <button
+                onClick={() => setStaffReqFilter('rejected')}
+                className={`px-3 py-1 rounded-md font-medium transition-colors ${staffReqFilter === 'rejected' ? 'bg-red-500/10 text-red-600 dark:text-red-400 font-bold shadow-xs' : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400'}`}
+              >
+                Rejected ({staffRequests.filter((r) => r.status === 'rejected').length})
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden shadow-xs">
+            {filteredStaffRequests.length === 0 ? (
+              <div className="py-16 text-center">
+                <UserCheck className="h-10 w-10 text-neutral-300 dark:text-neutral-700 mx-auto mb-3" />
+                <h3 className="text-sm font-bold text-neutral-800 dark:text-neutral-200">No staff registration requests</h3>
+                <p className="text-xs text-neutral-400 mt-1">When staff members register at /staff/register, their requests appear here for approval.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-neutral-50 dark:bg-neutral-800/50 border-b border-neutral-200 dark:border-neutral-800 text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
+                      <th className="py-3.5 px-4">Applicant</th>
+                      <th className="py-3.5 px-4">Requested Role</th>
+                      <th className="py-3.5 px-4">Status</th>
+                      <th className="py-3.5 px-4">Requested On</th>
+                      <th className="py-3.5 px-4">Review Info</th>
+                      <th className="py-3.5 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/60 text-xs">
+                    {filteredStaffRequests.map((req) => (
+                      <tr key={req.id} className="hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40 transition-colors">
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-3">
+                            <div className="h-9 w-9 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold flex items-center justify-center text-xs shrink-0 uppercase">
+                              {(req.full_name || req.email || 'S').substring(0, 2)}
+                            </div>
+                            <div>
+                              <p className="font-bold text-neutral-900 dark:text-neutral-100">{req.full_name || 'Staff Candidate'}</p>
+                              <p className="text-[11px] text-neutral-500 font-mono">{req.email}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 font-semibold text-[11px]">
+                            <GraduationCap className="h-3 w-3 text-emerald-500" />
+                            {req.requested_role.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                            req.status === 'approved'
+                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                              : req.status === 'rejected'
+                              ? 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'
+                              : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                          }`}>
+                            {req.status === 'approved' ? (
+                              <CheckCircle2 className="h-3 w-3" />
+                            ) : req.status === 'rejected' ? (
+                              <XCircle className="h-3 w-3" />
+                            ) : (
+                              <Clock className="h-3 w-3 animate-pulse" />
+                            )}
+                            {req.status.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-neutral-500 dark:text-neutral-400 font-mono text-[11px]">
+                          {req.created_at ? new Date(req.created_at).toLocaleDateString() : 'N/A'}
+                        </td>
+                        <td className="py-3.5 px-4 text-[11px] text-neutral-500 dark:text-neutral-400">
+                          {req.reviewed_by ? (
+                            <div>
+                              <p className="font-semibold text-neutral-800 dark:text-neutral-200">{req.reviewed_by}</p>
+                              <p className="text-[10px] text-neutral-400">{req.reviewed_at ? new Date(req.reviewed_at).toLocaleDateString() : 'N/A'}</p>
+                            </div>
+                          ) : (
+                            <span className="text-neutral-400 italic">Pending Admin Review</span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          {req.status === 'pending' ? (
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => {
+                                  setApprovingReq(req);
+                                  setAssignedRole('teacher');
+                                }}
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                Approve
+                              </button>
+                              <button
+                                onClick={() => handleRejectStaff(req.id, req.email)}
+                                className="px-3 py-1.5 bg-red-600/10 hover:bg-red-600 text-red-600 hover:text-white border border-red-500/20 rounded-lg font-bold text-[11px] flex items-center gap-1 transition-all cursor-pointer"
+                              >
+                                <XCircle className="h-3.5 w-3.5" />
+                                Reject
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] font-semibold text-neutral-400">
+                              Reviewed
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Approve Staff Modal */}
+      {approvingReq && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-900/50 backdrop-blur-xs">
+          <div className="bg-white dark:bg-neutral-900 rounded-xl max-w-md w-full p-6 border border-neutral-200 dark:border-neutral-800 shadow-xl relative">
+            <button
+              onClick={() => setApprovingReq(null)}
+              className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <h3 className="text-lg font-bold text-neutral-900 dark:text-neutral-50 flex items-center gap-2">
+              <UserCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              Approve Staff Registration
+            </h3>
+            <p className="text-xs text-neutral-500 mt-1">
+              Select the administrative role to assign for <strong>{approvingReq.email}</strong>.
+            </p>
+
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-2">
+                  Assigned Staff Role
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setAssignedRole('teacher')}
+                    className={`py-3 px-3 rounded-xl text-xs font-bold border flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                      assignedRole === 'teacher'
+                        ? 'bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                        : 'border-neutral-200 dark:border-neutral-800 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                    }`}
+                  >
+                    <GraduationCap className="h-5 w-5" />
+                    Teacher
+                    <span className="text-[10px] font-normal opacity-80">Content & Tests</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setAssignedRole('admin')}
+                    className={`py-3 px-3 rounded-xl text-xs font-bold border flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                      assignedRole === 'admin'
+                        ? 'bg-indigo-500/10 border-indigo-500 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                        : 'border-neutral-200 dark:border-neutral-800 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                    }`}
+                  >
+                    <Shield className="h-5 w-5" />
+                    Administrator
+                    <span className="text-[10px] font-normal opacity-80">Full Controls</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-3 bg-neutral-50 dark:bg-neutral-800/60 rounded-lg text-[11px] text-neutral-500 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-800">
+                Approving this request grants the user active access to the staff portal as a <strong>{assignedRole.toUpperCase()}</strong>.
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setApprovingReq(null)}
+                  className="px-4 py-2 text-xs font-medium border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-600 dark:text-neutral-400 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApproveStaff}
+                  disabled={actionLoading}
+                  className="px-4 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg flex items-center gap-2 cursor-pointer shadow-sm"
+                >
+                  {actionLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Confirm Approval
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add User Modal */}
       {isAddUserOpen && (
@@ -452,7 +835,7 @@ export default function Users() {
           <div className="bg-white dark:bg-neutral-900 rounded-xl max-w-md w-full p-6 border border-neutral-200 dark:border-neutral-800 shadow-xl relative">
             <button
               onClick={() => setIsAddUserOpen(false)}
-              className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+              className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 cursor-pointer"
             >
               <X className="h-5 w-5" />
             </button>
@@ -515,29 +898,41 @@ export default function Users() {
                 <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
                   Role Assignment
                 </label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
                     onClick={() => setNewRole('student')}
-                    className={`py-2 rounded-lg text-xs font-semibold border flex items-center justify-center gap-2 transition-colors ${
+                    className={`py-2 rounded-lg text-xs font-semibold border flex items-center justify-center gap-1 transition-colors cursor-pointer ${
                       newRole === 'student'
                         ? 'bg-teal-500/10 border-teal-500 text-teal-600 dark:text-teal-400'
                         : 'border-neutral-200 dark:border-neutral-700 text-neutral-500'
                     }`}
                   >
-                    <User className="h-4 w-4" />
+                    <User className="h-3.5 w-3.5" />
                     Student
                   </button>
                   <button
                     type="button"
+                    onClick={() => setNewRole('teacher')}
+                    className={`py-2 rounded-lg text-xs font-semibold border flex items-center justify-center gap-1 transition-colors cursor-pointer ${
+                      newRole === 'teacher'
+                        ? 'bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400'
+                        : 'border-neutral-200 dark:border-neutral-700 text-neutral-500'
+                    }`}
+                  >
+                    <GraduationCap className="h-3.5 w-3.5" />
+                    Teacher
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setNewRole('admin')}
-                    className={`py-2 rounded-lg text-xs font-semibold border flex items-center justify-center gap-2 transition-colors ${
+                    className={`py-2 rounded-lg text-xs font-semibold border flex items-center justify-center gap-1 transition-colors cursor-pointer ${
                       newRole === 'admin'
                         ? 'bg-indigo-500/10 border-indigo-500 text-indigo-600 dark:text-indigo-400'
                         : 'border-neutral-200 dark:border-neutral-700 text-neutral-500'
                     }`}
                   >
-                    <Shield className="h-4 w-4" />
+                    <Shield className="h-3.5 w-3.5" />
                     Admin
                   </button>
                 </div>
@@ -547,14 +942,14 @@ export default function Users() {
                 <button
                   type="button"
                   onClick={() => setIsAddUserOpen(false)}
-                  className="px-4 py-2 text-xs font-medium border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-600 dark:text-neutral-400"
+                  className="px-4 py-2 text-xs font-medium border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-600 dark:text-neutral-400 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white rounded-lg flex items-center gap-2"
+                  className="px-4 py-2 text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white rounded-lg flex items-center gap-2 cursor-pointer"
                 >
                   {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   Create Account
@@ -565,13 +960,13 @@ export default function Users() {
         </div>
       )}
 
-      {/* User Profile Modal */}
+      {/* User Profile Modal Drawer */}
       {activeProfileId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-900/50 backdrop-blur-xs">
           <div className="bg-white dark:bg-neutral-900 rounded-xl max-w-lg w-full p-6 border border-neutral-200 dark:border-neutral-800 shadow-xl relative max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setActiveProfileId(null)}
-              className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+              className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 cursor-pointer"
             >
               <X className="h-5 w-5" />
             </button>

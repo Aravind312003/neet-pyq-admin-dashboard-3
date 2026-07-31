@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { ShieldCheck, Mail, Lock, AlertCircle, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import Turnstile from '../components/Turnstile';
 
-// Ensure no trailing slash on base URL
+// Deployed backend API base URL
 const API_BASE_URL = 'https://neet-pyq-admin-dashboard-3.onrender.com';
 
 export default function Login() {
@@ -17,6 +17,7 @@ export default function Login() {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
+    // If already authenticated, redirect straight to dashboard
     const token = localStorage.getItem('adminToken');
     if (token) {
       navigate('/admin/dashboard');
@@ -39,15 +40,15 @@ export default function Login() {
 
     setLoading(true);
 
-    // List of common backend route aliases to try sequentially in case of route mounting mismatch
+    // Endpoints to attempt sequentially in case of backend mounting variations
     const endpointsToTry = [
       `${API_BASE_URL}/api/admin/login`,
       `${API_BASE_URL}/admin/login`,
       `${API_BASE_URL}/api/login`,
+      '/api/admin/login'
     ];
 
     let response: Response | null = null;
-    let successfulEndpoint = '';
 
     try {
       for (const endpoint of endpointsToTry) {
@@ -58,21 +59,18 @@ export default function Login() {
             body: JSON.stringify({ email, password, turnstileToken }),
           });
 
-          // If the endpoint is found (not 404), use this response
           if (res.status !== 404) {
             response = res;
-            successfulEndpoint = endpoint;
             break;
           }
         } catch (fetchErr) {
-          console.warn(`Failed reaching ${endpoint}:`, fetchErr);
+          console.warn(`Attempt failed reaching ${endpoint}:`, fetchErr);
         }
       }
 
-      // If all attempts returned 404 or failed
       if (!response) {
         setError(
-          'Login endpoint not found (404). Please verify that your backend Express routes are correctly mounted under /api/admin/login.'
+          'Login endpoint not reachable (404). Please verify that your backend Express server is running and route endpoints are mounted correctly.'
         );
         setLoading(false);
         return;
@@ -80,7 +78,7 @@ export default function Login() {
 
       const contentType = response.headers.get('content-type') || '';
       if (contentType.includes('text/html') || response.redirected) {
-        setError('Received HTML instead of JSON. Check backend CORS and route settings.');
+        setError('Received HTML instead of JSON. Check backend CORS and API routing parameters.');
         setLoading(false);
         return;
       }
@@ -89,22 +87,22 @@ export default function Login() {
       try {
         data = await response.json();
       } catch (jsonErr) {
-        setError('Received an invalid JSON response from the server.');
+        setError('Received an invalid JSON response from the server. Please try again.');
         setLoading(false);
         return;
       }
 
       if (!response.ok) {
         if (response.status === 403) {
-          setError('Access Denied. You are not authorized to access the Admin Dashboard.');
+          setError('Access Denied. You are not an authorized staff or administrator account.');
         } else {
-          setError(data.message || data.detail || 'Invalid login credentials.');
+          setError(data.message || data.detail || 'Invalid login credentials or unauthorized staff account.');
         }
         setLoading(false);
         return;
       }
 
-      // Login success
+      // Login successful
       setSuccess(true);
       if (data.token) localStorage.setItem('adminToken', data.token);
       if (data.user) localStorage.setItem('adminUser', JSON.stringify(data.user));
@@ -114,7 +112,7 @@ export default function Login() {
       }, 1000);
     } catch (err) {
       console.error('Login request failed:', err);
-      setError('Connection failed. Please check if your Render backend service is awake and active.');
+      setError('Connection failed. Please check if your Render backend service is active.');
       setLoading(false);
     }
   };
@@ -198,27 +196,51 @@ export default function Login() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-neutral-500 hover:text-white"
+                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-neutral-500 hover:text-white cursor-pointer"
                 >
                   {showPassword ? <EyeOff className="h-4.5 w-4.5" /> : <Eye className="h-4.5 w-4.5" />}
                 </button>
               </div>
             </div>
 
-            {/* Turnstile Widget */}
+            {/* Turnstile Security Widget */}
             <Turnstile onVerify={(token) => setTurnstileToken(token)} />
+
+            {/* Default Admin Quick-Fill Helper */}
+            <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3 text-xs flex items-center justify-between">
+              <div>
+                <p className="text-neutral-400 text-[11px] font-medium">Default Administrator Account:</p>
+                <p className="text-emerald-400 font-mono font-semibold text-[11px]">admin@neetplatform.com</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('admin@neetplatform.com');
+                  setPassword('admin123');
+                }}
+                className="px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded text-[10px] font-bold transition-colors cursor-pointer"
+              >
+                Auto-fill
+              </button>
+            </div>
 
             <button
               type="submit"
               disabled={loading || success}
-              className="w-full flex justify-center items-center py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold shadow-lg shadow-emerald-950/30 transition-all focus:outline-hidden disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full flex justify-center items-center py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold shadow-lg shadow-emerald-950/30 transition-all focus:outline-hidden disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               {loading ? 'Verifying Admin Access...' : 'Authenticate Securely'}
             </button>
           </form>
 
-          <div className="mt-6 pt-4 border-t border-neutral-900 text-center text-[11px] text-neutral-500">
-            Authorized administrative use only. System activity is logged and auditable under strict security protocols.
+          <div className="mt-6 pt-4 border-t border-neutral-900 text-center text-xs text-neutral-400">
+            Need staff access?{' '}
+            <Link to="/staff/register" className="text-emerald-400 font-bold hover:underline">
+              Register Here
+            </Link>
+          </div>
+          <div className="mt-2 text-center text-[10px] text-neutral-500">
+            Authorized administrative & staff use only. System activity is logged under strict security protocols.
           </div>
         </div>
       </div>
