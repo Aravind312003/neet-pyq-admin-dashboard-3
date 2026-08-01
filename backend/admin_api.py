@@ -90,6 +90,14 @@ class LoginRequest(BaseModel):
     password: str
     turnstileToken: str
 
+class StaffRegisterRequest(BaseModel):
+    fullName: str
+    email: str
+    password: str
+    confirmPassword: Optional[str] = None
+    role: Optional[str] = "teacher"
+    turnstileToken: Optional[str] = "mock_turnstile_token_123"
+
 class QuestionCreate(BaseModel):
     year: Optional[int] = 2025
     subject: Optional[str] = "Physics"
@@ -143,7 +151,7 @@ async def root():
 
 
 # ==========================================
-# AUTHENTICATION & LOGIN (Querying public.admin_accounts)
+# AUTHENTICATION & LOGIN (Exact admin_accounts Schema Match)
 # ==========================================
 async def admin_login(payload: LoginRequest):
     turnstile_ok = await verify_turnstile_token(payload.turnstileToken)
@@ -155,13 +163,12 @@ async def admin_login(payload: LoginRequest):
 
     if supabase:
         try:
-            # Query separate admin_accounts table
+            # Query admin_accounts table
             res = supabase.table("admin_accounts").select("*").eq("email", normalized_email).execute()
             if res.data and len(res.data) > 0:
                 acc = res.data[0]
-                saved_pass = acc.get("password") or ""
+                saved_pass = acc.get("password_hash") or acc.get("password") or ""
                 
-                # Direct check or simple hash match
                 if payload.password == saved_pass or saved_pass == "admin123":
                     if acc.get("disabled"):
                         raise HTTPException(status_code=403, detail="Your staff account has been deactivated.")
@@ -175,9 +182,9 @@ async def admin_login(payload: LoginRequest):
         except HTTPException:
             raise
         except Exception as e:
-            print(f"[DEBUG] admin_accounts query error: {e}")
+            print(f"[DEBUG] admin_accounts login query error: {e}")
 
-    # Default admin fallback if table not yet seeded
+    # Fallback for default admin
     if not user_profile and normalized_email == "admin@neetplatform.com" and payload.password in ["admin123", "admin"]:
         user_profile = {
             "id": "usr_admin_default",
@@ -208,6 +215,60 @@ router.add_api_route("/login", admin_login, methods=["POST"])
 api_router.add_api_route("/login", admin_login, methods=["POST"])
 router.add_api_route("/staff/login", admin_login, methods=["POST"])
 api_router.add_api_route("/staff/login", admin_login, methods=["POST"])
+
+
+# ==========================================
+# STAFF/ADMIN REGISTRATION (Writes directly to admin_accounts)
+# ==========================================
+async def staff_register(payload: StaffRegisterRequest):
+    normalized_email = payload.email.strip().lower()
+    
+    if not payload.fullName or not normalized_email or not payload.password:
+        raise HTTPException(status_code=400, detail="Missing required registration fields.")
+        
+    if payload.confirmPassword and payload.password != payload.confirmPassword:
+        raise HTTPException(status_code=400, detail="Password and Confirm Password do not match.")
+
+    # Strictly enforce role constraint ('admin' or 'teacher')
+    target_role = "teacher" if payload.role not in ["admin", "teacher"] else payload.role
+
+    if supabase:
+        try:
+            # 1. Check if email already exists in admin_accounts
+            existing = supabase.table("admin_accounts").select("id").eq("email", normalized_email).execute()
+            if existing.data and len(existing.data) > 0:
+                raise HTTPException(status_code=400, detail="An admin/staff account with this email already exists.")
+
+            # 2. Insert into admin_accounts using exact schema: password_hash
+            new_account = {
+                "id": str(uuid.uuid4()),
+                "email": normalized_email,
+                "password_hash": payload.password,  # Stores password in password_hash column
+                "full_name": payload.fullName.strip(),
+                "role": target_role,
+                "disabled": False,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            
+            res = supabase.table("admin_accounts").insert(new_account).execute()
+            if res.data:
+                return {
+                    "success": True,
+                    "message": "Account registered successfully in admin_accounts.",
+                    "user": res.data[0]
+                }
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"[ERROR] Failed to insert into admin_accounts: {e}")
+            raise HTTPException(status_code=500, detail=f"Database error saving admin account: {str(e)}")
+
+    return {"success": True, "message": "Account registered successfully."}
+
+router.add_api_route("/staff/register", staff_register, methods=["POST"])
+api_router.add_api_route("/staff/register", staff_register, methods=["POST"])
+router.add_api_route("/register", staff_register, methods=["POST"])
+api_router.add_api_route("/register", staff_register, methods=["POST"])
 
 
 async def get_dashboard_metrics(admin: AdminUser = Depends(get_current_admin)):
