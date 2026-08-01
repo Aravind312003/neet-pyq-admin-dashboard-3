@@ -17,7 +17,7 @@ export default function Login() {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    // If already authenticated, redirect straight to dashboard
+    // Redirect if already authenticated
     const token = localStorage.getItem('adminToken');
     if (token) {
       navigate('/admin/dashboard');
@@ -40,7 +40,6 @@ export default function Login() {
 
     setLoading(true);
 
-    // Endpoints to attempt sequentially in case of backend mounting variations
     const endpointsToTry = [
       `${API_BASE_URL}/api/admin/login`,
       `${API_BASE_URL}/admin/login`,

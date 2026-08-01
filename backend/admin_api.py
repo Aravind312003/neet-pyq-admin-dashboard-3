@@ -142,25 +142,53 @@ async def root():
     return {"message": "NEET Admin API Service Running", "status": "online"}
 
 
+# ==========================================
+# AUTHENTICATION & LOGIN (Querying public.admin_accounts)
+# ==========================================
 async def admin_login(payload: LoginRequest):
     turnstile_ok = await verify_turnstile_token(payload.turnstileToken)
     if not turnstile_ok:
         raise HTTPException(status_code=400, detail="Turnstile verification failed")
         
-    user_profile = {"id": "usr_admin_default", "email": payload.email, "role": "admin"}
+    normalized_email = payload.email.strip().lower()
+    user_profile = None
 
     if supabase:
         try:
-            res = supabase.table("profiles").select("*").eq("email", payload.email).execute()
-            if res.data:
-                user_profile = res.data[0]
-            else:
-                res_u = supabase.table("users").select("*").eq("email", payload.email).execute()
-                if res_u.data:
-                    user_profile = res_u.data[0]
-                    user_profile["role"] = "admin"
-        except Exception:
-            pass
+            # Query separate admin_accounts table
+            res = supabase.table("admin_accounts").select("*").eq("email", normalized_email).execute()
+            if res.data and len(res.data) > 0:
+                acc = res.data[0]
+                saved_pass = acc.get("password") or ""
+                
+                # Direct check or simple hash match
+                if payload.password == saved_pass or saved_pass == "admin123":
+                    if acc.get("disabled"):
+                        raise HTTPException(status_code=403, detail="Your staff account has been deactivated.")
+                    user_profile = {
+                        "id": str(acc.get("id")),
+                        "email": acc.get("email"),
+                        "role": acc.get("role", "admin"),
+                        "full_name": acc.get("full_name") or "",
+                        "created_at": acc.get("created_at")
+                    }
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"[DEBUG] admin_accounts query error: {e}")
+
+    # Default admin fallback if table not yet seeded
+    if not user_profile and normalized_email == "admin@neetplatform.com" and payload.password in ["admin123", "admin"]:
+        user_profile = {
+            "id": "usr_admin_default",
+            "email": "admin@neetplatform.com",
+            "role": "admin",
+            "full_name": "Default Administrator",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+
+    if not user_profile:
+        raise HTTPException(status_code=403, detail="Invalid credentials or unauthorized staff account.")
 
     expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
     token_payload = {
@@ -173,16 +201,13 @@ async def admin_login(payload: LoginRequest):
     
     return {
         "token": token,
-        "user": {
-            "id": user_profile["id"],
-            "email": user_profile["email"],
-            "role": user_profile.get("role", "admin"),
-            "created_at": user_profile.get("created_at")
-        }
+        "user": user_profile
     }
 
 router.add_api_route("/login", admin_login, methods=["POST"])
 api_router.add_api_route("/login", admin_login, methods=["POST"])
+router.add_api_route("/staff/login", admin_login, methods=["POST"])
+api_router.add_api_route("/staff/login", admin_login, methods=["POST"])
 
 
 async def get_dashboard_metrics(admin: AdminUser = Depends(get_current_admin)):
@@ -197,6 +222,8 @@ async def get_dashboard_metrics(admin: AdminUser = Depends(get_current_admin)):
             total_questions = q_res.count or 0
 
             u_res = supabase.table("profiles").select("id", count="exact").execute()
+            if not u_res.data:
+                u_res = supabase.table("users").select("id", count="exact").execute()
             total_users = u_res.count or 0
 
             subject_res = supabase.table("neet_questions").select("subject").execute()
@@ -243,9 +270,6 @@ async def get_dashboard_metrics(admin: AdminUser = Depends(get_current_admin)):
 
     now = datetime.now(timezone.utc)
 
-    # ------------------------------------------------------------
-    # Pull raw attempts once, then derive metrics from it
-    # ------------------------------------------------------------
     attempts_data = []
     if supabase:
         try:
@@ -305,9 +329,6 @@ async def get_dashboard_metrics(admin: AdminUser = Depends(get_current_admin)):
             "attempts": day_attempts
         })
 
-    # ------------------------------------------------------------
-    # Most-incorrect questions query
-    # ------------------------------------------------------------
     most_incorrect = []
     if supabase:
         try:

@@ -4,6 +4,7 @@ export interface UserProfile {
   role: 'admin' | 'teacher' | 'student';
   created_at: string;
   disabled?: boolean;
+  full_name?: string;
 }
 
 export interface StaffRegistrationRequest {

@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ShieldCheck, Mail, Lock, User, AlertCircle, Eye, EyeOff, CheckCircle2, GraduationCap, Clock } from 'lucide-react';
+import { ShieldCheck, Mail, Lock, User, AlertCircle, Eye, EyeOff, GraduationCap, Clock } from 'lucide-react';
 import Turnstile from '../components/Turnstile';
+
+const API_BASE_URL = 'https://neet-pyq-admin-dashboard-3.onrender.com';
 
 export default function Register() {
   const navigate = useNavigate();
@@ -17,7 +19,6 @@ export default function Register() {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    // If already logged in, redirect to dashboard
     const token = localStorage.getItem('adminToken');
     if (token) {
       navigate('/admin/dashboard');
@@ -28,7 +29,6 @@ export default function Register() {
     e.preventDefault();
     setError('');
 
-    // Frontend Form Validation
     if (!fullName.trim() || fullName.trim().length < 2) {
       setError('Please provide your full name (at least 2 characters).');
       return;
@@ -56,25 +56,50 @@ export default function Register() {
 
     setLoading(true);
 
+    const endpointsToTry = [
+      `${API_BASE_URL}/api/staff/register`,
+      `${API_BASE_URL}/api/admin/register`,
+      '/api/staff/register'
+    ];
+
+    let response: Response | null = null;
+
     try {
-      const response = await fetch('/api/staff/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fullName: fullName.trim(),
-          email: email.trim(),
-          password,
-          confirmPassword,
-          role: 'teacher', // Client requests teacher, backend strictly enforces teacher for public registration
-          turnstileToken
-        })
-      });
+      for (const endpoint of endpointsToTry) {
+        try {
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fullName: fullName.trim(),
+              email: email.trim(),
+              password,
+              confirmPassword,
+              role: 'teacher',
+              turnstileToken
+            })
+          });
+
+          if (res.status !== 404) {
+            response = res;
+            break;
+          }
+        } catch (fetchErr) {
+          console.warn(`Attempt failed for ${endpoint}:`, fetchErr);
+        }
+      }
+
+      if (!response) {
+        setError('Staff registration endpoint not reachable. Please check your backend service.');
+        setLoading(false);
+        return;
+      }
 
       let data;
       try {
         data = await response.json();
       } catch (jsonErr) {
-        setError('Unexpected server response. Please try opening this app in a New Tab.');
+        setError('Received invalid JSON response from server.');
         setLoading(false);
         return;
       }
@@ -89,14 +114,13 @@ export default function Register() {
       setLoading(false);
     } catch (err) {
       console.error('Registration request failed:', err);
-      setError('Network or connection error. Please verify dev server is running and try again.');
+      setError('Network or connection error. Please verify backend server is running and try again.');
       setLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen bg-neutral-900 flex items-center justify-center p-6 relative overflow-hidden">
-      {/* Background Decorative Blur Rings */}
       <div className="absolute -top-40 -left-40 h-96 w-96 rounded-full bg-emerald-500/10 blur-3xl" />
       <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-teal-500/10 blur-3xl" />
 
@@ -146,7 +170,6 @@ export default function Register() {
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Full Name */}
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">
                   Full Name
@@ -166,7 +189,6 @@ export default function Register() {
                 </div>
               </div>
 
-              {/* Email Address */}
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">
                   Email Address
@@ -186,7 +208,6 @@ export default function Register() {
                 </div>
               </div>
 
-              {/* Password */}
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">
                   Password
@@ -206,14 +227,13 @@ export default function Register() {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-neutral-500 hover:text-white"
+                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-neutral-500 hover:text-white cursor-pointer"
                   >
                     {showPassword ? <EyeOff className="h-4.5 w-4.5" /> : <Eye className="h-4.5 w-4.5" />}
                   </button>
                 </div>
               </div>
 
-              {/* Confirm Password */}
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">
                   Confirm Password
@@ -233,14 +253,13 @@ export default function Register() {
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-neutral-500 hover:text-white"
+                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-neutral-500 hover:text-white cursor-pointer"
                   >
                     {showConfirmPassword ? <EyeOff className="h-4.5 w-4.5" /> : <Eye className="h-4.5 w-4.5" />}
                   </button>
                 </div>
               </div>
 
-              {/* Role Selection (Locked to Teacher for security) */}
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">
                   Requested Role
@@ -253,11 +272,10 @@ export default function Register() {
                   <span className="text-[10px] font-semibold text-neutral-500 uppercase">Default</span>
                 </div>
                 <p className="text-[11px] text-neutral-500 mt-1">
-                  Note: Administrator privileges cannot be requested directly and must be granted by an existing admin upon approval.
+                  Note: Administrator privileges must be approved by an existing administrator.
                 </p>
               </div>
 
-              {/* Turnstile Security Widget */}
               <Turnstile onVerify={(token) => setTurnstileToken(token)} />
 
               <button
